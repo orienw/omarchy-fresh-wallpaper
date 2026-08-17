@@ -306,8 +306,8 @@ Panel {
         Toggle {
           width: parent.width
           label: "Change on start"
-          description: "Apply a random image when the Omarchy shell loads."
-          checked: root.wallpaperService ? root.wallpaperService.runOnStart : true
+          description: "Force a new image whenever the Omarchy shell loads."
+          checked: root.wallpaperService ? root.wallpaperService.runOnStart : false
           foreground: root.foreground
           fontFamily: root.fontFamily
           hasCursor: root.cursorIndex === root.startupCursorIndex

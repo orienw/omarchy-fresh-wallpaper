@@ -41,7 +41,7 @@ Item {
   readonly property string provider: String(setting("provider", "bing")).trim().toLowerCase()
   readonly property string market: String(setting("market", "en-US")).trim()
   readonly property int intervalMinutes: normalizedInterval(setting("intervalMinutes", 1440))
-  readonly property bool runOnStart: boolSetting("runOnStart", true)
+  readonly property bool runOnStart: boolSetting("runOnStart", false)
   readonly property int cacheLimit: intSetting("cacheLimit", 30, 8, 100)
 
   property bool initialized: false
@@ -51,6 +51,8 @@ Item {
   property int consecutiveFailures: 0
   property double scheduleOriginMs: 0
   property double retryAfterMs: 0
+  property bool startupResolved: false
+  property string pendingStartupTrigger: ""
   readonly property bool running: fetchProcess.running
   readonly property double scheduleChunkMs: 86400000
 
@@ -86,8 +88,20 @@ Item {
     initialized = true
     scheduleOriginMs = Date.now()
     stateFile.reload()
+  }
+
+  function initialRefreshTrigger(hasWallpaper, changeOnStart) {
+    if (changeOnStart) return "startup"
+    return hasWallpaper ? "" : "first-run"
+  }
+
+  function resolveStartup(hasWallpaper) {
+    if (!initialized || startupResolved) return
+    startupResolved = true
     armSchedule()
-    if (runOnStart) startupTimer.start()
+
+    pendingStartupTrigger = initialRefreshTrigger(hasWallpaper, runOnStart)
+    if (pendingStartupTrigger !== "") startupTimer.start()
   }
 
   function lastChangeMs() {
@@ -141,15 +155,22 @@ Item {
   function loadState(raw) {
     var text = String(raw || "").trim()
     if (text === "") {
+      resolveStartup(false)
       armSchedule()
       return
     }
+
+    var hasWallpaper = false
     try {
       var parsed = JSON.parse(text)
-      if (parsed && typeof parsed === "object") currentWallpaper = parsed
+      if (parsed && typeof parsed === "object") {
+        currentWallpaper = parsed
+        hasWallpaper = String(parsed.path || "").trim() !== ""
+      }
     } catch (error) {
       console.warn("fresh-wallpaper: could not parse state:", error)
     }
+    resolveStartup(hasWallpaper)
     armSchedule()
   }
 
@@ -260,7 +281,7 @@ Item {
     id: startupTimer
     interval: 250
     repeat: false
-    onTriggered: root.startRefresh("startup")
+    onTriggered: root.startRefresh(root.pendingStartupTrigger)
   }
 
   Timer {
@@ -275,6 +296,7 @@ Item {
     watchChanges: true
     printErrors: false
     onLoaded: root.loadState(text())
+    onLoadFailed: root.resolveStartup(false)
     onFileChanged: reload()
   }
 

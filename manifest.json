@@ -24,7 +24,7 @@
       "provider": "bing",
       "market": "en-US",
       "intervalMinutes": 1440,
-      "runOnStart": true,
+      "runOnStart": false,
       "cacheLimit": 30
     },
     "schema": [
@@ -58,8 +58,8 @@
         "key": "runOnStart",
         "type": "boolean",
         "label": "Change on start",
-        "description": "Apply a wallpaper when the Omarchy shell loads.",
-        "defaultValue": true
+        "description": "Force a new wallpaper whenever the Omarchy shell loads.",
+        "defaultValue": false
       },
       {
         "key": "cacheLimit",

@@ -64,6 +64,16 @@ ShellRoot {
         root.fail("monthly preset was not loaded")
         return
       }
+      if (service.runOnStart || service.lastTrigger !== "") {
+        root.fail("change on start was not off by default")
+        return
+      }
+      if (service.initialRefreshTrigger(false, false) !== "first-run"
+          || service.initialRefreshTrigger(true, false) !== ""
+          || service.initialRefreshTrigger(true, true) !== "startup") {
+        root.fail("initial refresh behavior is incorrect")
+        return
+      }
 
       var remaining = service.scheduledAtMs() - Date.now()
       var monthlyMs = 30 * 24 * 60 * 60000

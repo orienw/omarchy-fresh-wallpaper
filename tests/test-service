@@ -6,9 +6,15 @@ TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_DIR=$(cd "$TEST_DIR/.." && pwd)
 TEST_RUNTIME=$(mktemp -d /tmp/fresh-wallpaper-runtime.XXXXXX)
 TEST_STATE=$(mktemp -d /tmp/fresh-wallpaper-state.XXXXXX)
-trap 'rm -rf -- "$TEST_RUNTIME" "$TEST_STATE"' EXIT
+FIRST_RUN_STATE=$(mktemp -d /tmp/fresh-wallpaper-first-run-state.XXXXXX)
+trap 'rm -rf -- "$TEST_RUNTIME" "$TEST_STATE" "$FIRST_RUN_STATE"' EXIT
 
 chmod 700 "$TEST_RUNTIME"
+STATE_DIR="$TEST_STATE/omarchy/fresh-wallpaper"
+STATE_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+mkdir -p "$STATE_DIR"
+printf '{"path":"/tmp/existing-wallpaper.jpg","changedAt":"%s"}\n' "$STATE_TIMESTAMP" \
+  > "$STATE_DIR/current.json"
 
 output=$(
   WAYLAND_DISPLAY= \
@@ -24,4 +30,19 @@ if ! grep -q "service schedule tests passed" <<<"$output"; then
   exit 1
 fi
 
-printf 'service schedule tests passed\n'
+first_run_output=$(
+  WAYLAND_DISPLAY= \
+  XDG_RUNTIME_DIR="$TEST_RUNTIME" \
+  XDG_STATE_HOME="$FIRST_RUN_STATE" \
+  FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
+  FRESH_WALLPAPER_TEST_PLUGIN_DIR="$TEST_DIR/fixtures/plugin" \
+  QT_QPA_PLATFORM=offscreen \
+    quickshell --no-color -p "$TEST_DIR/test-first-run.qml" 2>&1
+)
+
+if ! grep -q "service first-run test passed" <<<"$first_run_output"; then
+  printf '%s\n' "$first_run_output" >&2
+  exit 1
+fi
+
+printf 'service schedule and first-run tests passed\n'

@@ -7,8 +7,9 @@ Its small bar control opens a native configuration panel. The scheduler remains 
 ## Default behavior
 
 - Adds a wallpaper control to the right side of the Omarchy bar.
-- Downloads a UHD Bing wallpaper as soon as the plugin is enabled.
+- Downloads a UHD Bing wallpaper the first time the plugin is enabled.
 - Changes the wallpaper daily.
+- Does not force another change when the Omarchy shell or plugin reloads.
 - Chooses an image not used yet from Bing's current eight-day archive.
 - Starts a new random pass after all available images have been used, without immediately repeating the current image.
 - Keeps the 30 newest downloads and preserves the current wallpaper when a request fails.
@@ -36,7 +37,7 @@ These commands are included in a normal Omarchy installation. No sudo or pkexec 
 omarchy plugin add https://github.com/orienw/omarchy-fresh-wallpaper.git --enable
 ```
 
-Enabling adds the bar control and changes the wallpaper immediately using the defaults above.
+Enabling adds the bar control and downloads the first wallpaper. Later starts respect the Daily schedule instead of forcing another change.
 
 ## Use
 
@@ -74,7 +75,7 @@ Choose the Bing market used for the image collection and metadata:
 omarchy-shell fresh-wallpaper setMarket en-GB
 ```
 
-Control whether loading the plugin applies a wallpaper immediately:
+Control whether every Omarchy shell or plugin start forces an additional wallpaper change. This is off by default; the plugin still downloads a wallpaper when no prior state exists:
 
 ```sh
 omarchy-shell fresh-wallpaper setRunOnStart false
@@ -94,7 +95,7 @@ These commands persist settings in the plugin's existing entry in `~/.config/oma
   "provider": "bing",
   "market": "en-US",
   "intervalMinutes": 1440,
-  "runOnStart": true,
+  "runOnStart": false,
   "cacheLimit": 30
 }
 ```
@@ -106,6 +107,16 @@ Fresh Wallpaper makes HTTPS requests to `www.bing.com`. It stores downloaded ima
 The helper validates each response as a non-empty JPEG before changing the desktop. A failed request leaves the current Omarchy background untouched.
 
 Bing images remain copyrighted by their respective owners. Use them as personal desktop wallpapers and inspect the preserved attribution with the status command.
+
+## Update
+
+Update the installed plugin from its Git repository:
+
+```sh
+omarchy plugin update io.github.orienw.fresh-wallpaper
+```
+
+Omarchy shows the incoming changes before updating, validates the plugin, and reloads it. With **Change on start** left at its default Off setting, that reload keeps the current wallpaper and the existing schedule.
 
 ## Remove
 
