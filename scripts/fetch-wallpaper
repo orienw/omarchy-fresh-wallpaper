@@ -1,0 +1,252 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+PROVIDER="bing"
+MARKET="en-US"
+CACHE_LIMIT=30
+APPLY=1
+VERSION="0.1.0"
+
+usage() {
+  cat <<'USAGE'
+Usage: fetch-wallpaper [options]
+
+Options:
+  --provider <name>       Wallpaper provider (default: bing)
+  --market <locale>       Bing market, such as en-US (default: en-US)
+  --cache-limit <count>   Number of downloaded images to retain (default: 30)
+  --no-apply              Download and report a wallpaper without applying it
+  -h, --help              Show this help
+USAGE
+}
+
+fail() {
+  printf 'fresh-wallpaper: %s\n' "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
+}
+
+write_json() {
+  local target="$1"
+  local payload="$2"
+  local temporary
+
+  temporary=$(mktemp "${target}.tmp.XXXXXX")
+  printf '%s\n' "$payload" >"$temporary"
+  mv -- "$temporary" "$target"
+}
+
+valid_jpeg() {
+  [[ -s $1 ]] && [[ $(file --brief --mime-type -- "$1") == "image/jpeg" ]]
+}
+
+prune_cache() {
+  local -a entries=()
+  local path
+
+  mapfile -d '' -t entries < <(
+    find "$CACHE_DIR" -maxdepth 1 -type f -name 'bing-*.jpg' -printf '%T@\t%p\0' | sort -z -nr
+  )
+
+  for ((i = CACHE_LIMIT; i < ${#entries[@]}; i++)); do
+    path=${entries[$i]#*$'\t'}
+    rm -f -- "$path"
+  done
+}
+
+while (( $# > 0 )); do
+  case "$1" in
+    --provider)
+      [[ $# -ge 2 ]] || fail "--provider requires a value"
+      PROVIDER=${2,,}
+      shift 2
+      ;;
+    --market)
+      [[ $# -ge 2 ]] || fail "--market requires a value"
+      MARKET=$2
+      shift 2
+      ;;
+    --cache-limit)
+      [[ $# -ge 2 ]] || fail "--cache-limit requires a value"
+      CACHE_LIMIT=$2
+      shift 2
+      ;;
+    --no-apply)
+      APPLY=0
+      shift
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "unknown option: $1"
+      ;;
+  esac
+done
+
+[[ $PROVIDER == "bing" ]] || fail "unsupported provider: $PROVIDER"
+[[ $MARKET =~ ^[A-Za-z]{2,3}-[A-Za-z]{2}$ ]] || fail "invalid Bing market: $MARKET"
+[[ $CACHE_LIMIT =~ ^[0-9]+$ ]] || fail "cache limit must be an integer"
+(( CACHE_LIMIT >= 8 && CACHE_LIMIT <= 100 )) || fail "cache limit must be between 8 and 100"
+
+require_command curl
+require_command file
+require_command jq
+require_command shuf
+if (( APPLY )); then require_command omarchy; fi
+
+CACHE_HOME=${XDG_CACHE_HOME:-"$HOME/.cache"}
+STATE_HOME=${XDG_STATE_HOME:-"$HOME/.local/state"}
+CACHE_DIR="$CACHE_HOME/omarchy/fresh-wallpaper"
+STATE_DIR="$STATE_HOME/omarchy/fresh-wallpaper"
+CURRENT_FILE="$STATE_DIR/current.json"
+HISTORY_FILE="$STATE_DIR/history.json"
+
+mkdir -p -- "$CACHE_DIR" "$STATE_DIR"
+
+encoded_market=$(jq -rn --arg value "$MARKET" '$value | @uri')
+api_url="https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=${encoded_market}"
+
+archive=$(curl \
+  --fail \
+  --silent \
+  --show-error \
+  --location \
+  --retry 2 \
+  --retry-delay 1 \
+  --connect-timeout 10 \
+  --max-time 45 \
+  --user-agent "omarchy-fresh-wallpaper/${VERSION}" \
+  "$api_url") || fail "could not fetch the Bing image archive"
+
+jq -e '(.images | type) == "array" and (.images | length) > 0' >/dev/null <<<"$archive" \
+  || fail "Bing returned an invalid image archive"
+
+all_candidates=$(jq -c '
+  [.images[]
+    | select(.wp == null or .wp == true)
+    | select((.urlbase | type) == "string" and (.urlbase | test("^/th\\?id=OHR\\.")))
+    | {
+        startDate: (.startdate // ""),
+        urlbase: .urlbase,
+        title: (.title // ""),
+        copyright: (.copyright // ""),
+        copyrightLink: (.copyrightlink // "")
+      }
+  ]
+' <<<"$archive")
+
+(( $(jq 'length' <<<"$all_candidates") > 0 )) || fail "Bing returned no downloadable wallpapers"
+
+history='[]'
+if [[ -s $HISTORY_FILE ]] && jq -e 'type == "array" and all(.[]; type == "string")' "$HISTORY_FILE" >/dev/null 2>&1; then
+  history=$(jq -c . "$HISTORY_FILE")
+fi
+
+current_urlbase=""
+if [[ -s $CURRENT_FILE ]] && jq -e 'type == "object"' "$CURRENT_FILE" >/dev/null 2>&1; then
+  current_urlbase=$(jq -r '.urlbase // ""' "$CURRENT_FILE")
+fi
+
+candidates=$(jq -c --argjson seen "$history" '
+  [.[] | select(.urlbase as $candidate | ($seen | index($candidate) | not))]
+' <<<"$all_candidates")
+
+if (( $(jq 'length' <<<"$candidates") == 0 )); then
+  candidates=$(jq -c --arg current "$current_urlbase" '[.[] | select(.urlbase != $current)]' <<<"$all_candidates")
+fi
+if (( $(jq 'length' <<<"$candidates") == 0 )); then
+  candidates=$all_candidates
+fi
+
+candidate_count=$(jq 'length' <<<"$candidates")
+candidate_index=$(shuf -i "0-$((candidate_count - 1))" -n 1)
+selected=$(jq -c --argjson index "$candidate_index" '.[$index]' <<<"$candidates")
+
+start_date=$(jq -r '.startDate' <<<"$selected")
+urlbase=$(jq -r '.urlbase' <<<"$selected")
+title=$(jq -r '.title' <<<"$selected")
+copyright=$(jq -r '.copyright' <<<"$selected")
+copyright_link=$(jq -r '.copyrightLink' <<<"$selected")
+
+[[ $start_date =~ ^[0-9]{8}$ ]] || start_date=$(date -u +%Y%m%d)
+slug=${urlbase#*OHR.}
+slug=$(printf '%s' "$slug" | tr -cs '[:alnum:]._-' '-')
+slug=${slug#-}
+slug=${slug%-}
+[[ -n $slug ]] || fail "Bing returned an invalid wallpaper identifier"
+
+image_url="https://www.bing.com${urlbase}_UHD.jpg"
+image_path="$CACHE_DIR/bing-${start_date}-${slug}.jpg"
+
+if ! valid_jpeg "$image_path"; then
+  partial=$(mktemp "$CACHE_DIR/.download.XXXXXX")
+  cleanup() {
+    [[ -z ${partial:-} ]] || rm -f -- "$partial"
+  }
+  trap cleanup EXIT
+
+  curl \
+    --fail \
+    --silent \
+    --show-error \
+    --location \
+    --retry 2 \
+    --retry-delay 1 \
+    --connect-timeout 10 \
+    --max-time 90 \
+    --user-agent "omarchy-fresh-wallpaper/${VERSION}" \
+    --output "$partial" \
+    "$image_url" || fail "could not download the selected Bing wallpaper"
+
+  valid_jpeg "$partial" || fail "Bing returned a file that is not a JPEG image"
+  mv -- "$partial" "$image_path"
+  partial=""
+fi
+
+changed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+result=$(jq -cn \
+  --arg provider "$PROVIDER" \
+  --arg market "$MARKET" \
+  --arg startDate "$start_date" \
+  --arg urlbase "$urlbase" \
+  --arg title "$title" \
+  --arg copyright "$copyright" \
+  --arg copyrightLink "$copyright_link" \
+  --arg imageUrl "$image_url" \
+  --arg path "$image_path" \
+  --arg changedAt "$changed_at" \
+  --argjson applied "$APPLY" '
+    {
+      version: 1,
+      provider: $provider,
+      market: $market,
+      startDate: $startDate,
+      urlbase: $urlbase,
+      title: $title,
+      copyright: $copyright,
+      copyrightLink: $copyrightLink,
+      imageUrl: $imageUrl,
+      path: $path,
+      changedAt: $changedAt,
+      applied: ($applied == 1)
+    }
+  ')
+
+if (( APPLY )); then
+  omarchy theme bg set "$image_path"
+  write_json "$CURRENT_FILE" "$result"
+
+  next_history=$(jq -cn --arg selected "$urlbase" --argjson previous "$history" '
+    ([$selected] + [$previous[] | select(. != $selected)])[:8]
+  ')
+  write_json "$HISTORY_FILE" "$next_history"
+  prune_cache
+fi
+
+printf '%s\n' "$result"

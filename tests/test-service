@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+PROJECT_DIR=$(cd "$TEST_DIR/.." && pwd)
+TEST_RUNTIME=$(mktemp -d /tmp/fresh-wallpaper-runtime.XXXXXX)
+TEST_STATE=$(mktemp -d /tmp/fresh-wallpaper-state.XXXXXX)
+trap 'rm -rf -- "$TEST_RUNTIME" "$TEST_STATE"' EXIT
+
+chmod 700 "$TEST_RUNTIME"
+
+output=$(
+  WAYLAND_DISPLAY= \
+  XDG_RUNTIME_DIR="$TEST_RUNTIME" \
+  XDG_STATE_HOME="$TEST_STATE" \
+  FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
+  QT_QPA_PLATFORM=offscreen \
+    quickshell --no-color -p "$TEST_DIR/test-service.qml" 2>&1
+)
+
+if ! grep -q "service schedule tests passed" <<<"$output"; then
+  printf '%s\n' "$output" >&2
+  exit 1
+fi
+
+printf 'service schedule tests passed\n'

@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.orienw.fresh-wallpaper",
+  "name": "Fresh Wallpaper",
+  "version": "0.1.0",
+  "author": "Orien",
+  "license": "MIT",
+  "description": "Rotates high-resolution daily wallpapers with a compact native settings panel.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Fresh Wallpaper",
+    "description": "Preview, configure, and rotate high-resolution daily wallpapers.",
+    "category": "Appearance",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "provider": "bing",
+      "market": "en-US",
+      "intervalMinutes": 1440,
+      "runOnStart": true,
+      "cacheLimit": 30
+    },
+    "schema": [
+      {
+        "key": "provider",
+        "type": "enum",
+        "label": "Wallpaper source",
+        "options": [
+          "bing"
+        ],
+        "defaultValue": "bing"
+      },
+      {
+        "key": "intervalMinutes",
+        "type": "integer",
+        "label": "Rotation interval (minutes)",
+        "description": "Choose a simple preset in the panel, or use 0 for manual-only rotation.",
+        "min": 0,
+        "max": 525600,
+        "step": 15,
+        "defaultValue": 1440
+      },
+      {
+        "key": "market",
+        "type": "string",
+        "label": "Bing market",
+        "description": "A locale such as en-US or en-GB.",
+        "defaultValue": "en-US"
+      },
+      {
+        "key": "runOnStart",
+        "type": "boolean",
+        "label": "Change on start",
+        "description": "Apply a wallpaper when the Omarchy shell loads.",
+        "defaultValue": true
+      },
+      {
+        "key": "cacheLimit",
+        "type": "integer",
+        "label": "Cached wallpapers",
+        "min": 8,
+        "max": 100,
+        "step": 1,
+        "defaultValue": 30
+      }
+    ]
+  }
+}

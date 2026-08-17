@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+PROJECT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+TEST_TMP=$(mktemp -d)
+trap 'rm -rf -- "$TEST_TMP"' EXIT
+
+export PATH="$PROJECT_DIR/tests/mocks:$PATH"
+export TEST_FIXTURE_DIR="$PROJECT_DIR/tests/fixtures"
+export TEST_APPLY_LOG="$TEST_TMP/applied.log"
+export XDG_CACHE_HOME="$TEST_TMP/cache"
+export XDG_STATE_HOME="$TEST_TMP/state"
+
+: >"$TEST_APPLY_LOG"
+
+fetch() {
+  "$PROJECT_DIR/scripts/fetch-wallpaper" --provider bing --market en-US "$@"
+}
+
+first=$(fetch)
+jq -e '.provider == "bing" and .market == "en-US" and .applied == true' >/dev/null <<<"$first"
+first_urlbase=$(jq -r '.urlbase' <<<"$first")
+first_path=$(jq -r '.path' <<<"$first")
+[[ -f $first_path ]]
+[[ $(jq -r '.urlbase' "$XDG_STATE_HOME/omarchy/fresh-wallpaper/current.json") == "$first_urlbase" ]]
+
+second=$(fetch)
+second_urlbase=$(jq -r '.urlbase' <<<"$second")
+[[ $second_urlbase != "$first_urlbase" ]]
+[[ $(wc -l <"$TEST_APPLY_LOG") -eq 2 ]]
+
+dry_run=$(fetch --no-apply)
+jq -e '.applied == false' >/dev/null <<<"$dry_run"
+[[ $(wc -l <"$TEST_APPLY_LOG") -eq 2 ]]
+
+if fetch --provider unknown >/dev/null 2>&1; then
+  printf 'unsupported provider unexpectedly succeeded\n' >&2
+  exit 1
+fi
+
+export TEST_MIME_TYPE="text/html"
+rm -rf -- "$XDG_CACHE_HOME"
+if fetch --no-apply >/dev/null 2>&1; then
+  printf 'invalid image unexpectedly succeeded\n' >&2
+  exit 1
+fi
+
+printf 'fetch-wallpaper tests passed\n'

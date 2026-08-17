@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+PROJECT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+OMARCHY_ROOT=${OMARCHY_PATH:-/usr/share/omarchy}
+QML_LINT=/usr/lib/qt6/bin/qmllint
+QML_FORMAT=/usr/lib/qt6/bin/qmlformat
+IMPORT_ROOT=$(mktemp -d /tmp/fresh-wallpaper-qml.XXXXXX)
+trap 'rm -rf -- "$IMPORT_ROOT"' EXIT
+
+[[ -x $QML_LINT ]] || { printf 'qmllint not found: %s\n' "$QML_LINT" >&2; exit 1; }
+[[ -x $QML_FORMAT ]] || { printf 'qmlformat not found: %s\n' "$QML_FORMAT" >&2; exit 1; }
+[[ -d $OMARCHY_ROOT/shell/Ui ]] || { printf 'Omarchy UI imports not found: %s\n' "$OMARCHY_ROOT" >&2; exit 1; }
+[[ -d $OMARCHY_ROOT/shell/Commons ]] || { printf 'Omarchy common imports not found: %s\n' "$OMARCHY_ROOT" >&2; exit 1; }
+
+mkdir -p "$IMPORT_ROOT/qs"
+ln -s "$OMARCHY_ROOT/shell/Ui" "$IMPORT_ROOT/qs/Ui"
+ln -s "$OMARCHY_ROOT/shell/Commons" "$IMPORT_ROOT/qs/Commons"
+
+files=(Service.qml BarWidget.qml Panel.qml)
+for file in "${files[@]}"; do
+  "$QML_FORMAT" "$PROJECT_DIR/$file" >/dev/null
+done
+
+"$QML_LINT" -I "$IMPORT_ROOT" "${files[@]/#/$PROJECT_DIR/}"
+
+printf 'QML checks passed\n'

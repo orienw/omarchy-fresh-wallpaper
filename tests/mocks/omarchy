@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+[[ $1 == "theme" && $2 == "bg" && $3 == "set" && -n ${4:-} ]]
+printf '%s\n' "$4" >>"$TEST_APPLY_LOG"
