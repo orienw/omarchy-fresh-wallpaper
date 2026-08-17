@@ -8,18 +8,27 @@ trap 'rm -rf -- "$TEST_TMP"' EXIT
 
 export PATH="$PROJECT_DIR/tests/mocks:$PATH"
 export TEST_FIXTURE_DIR="$PROJECT_DIR/tests/fixtures"
-export TEST_APPLY_LOG="$TEST_TMP/applied.log"
-export XDG_CACHE_HOME="$TEST_TMP/cache"
-export XDG_STATE_HOME="$TEST_TMP/state"
 
-: >"$TEST_APPLY_LOG"
+use_case() {
+  local name="$1"
+
+  export XDG_CACHE_HOME="$TEST_TMP/$name/cache"
+  export XDG_STATE_HOME="$TEST_TMP/$name/state"
+  export TEST_APPLY_LOG="$TEST_TMP/$name/applied.log"
+  unset TEST_BING_FIXTURE TEST_FAIL_UHD TEST_IMAGE_URL_LOG TEST_MIME_TYPE
+  mkdir -p "$(dirname "$TEST_APPLY_LOG")"
+  : >"$TEST_APPLY_LOG"
+}
 
 fetch() {
   "$PROJECT_DIR/scripts/fetch-wallpaper" --provider bing --market en-US "$@"
 }
 
+use_case rotation
+
 first=$(fetch)
 jq -e '.provider == "bing" and .market == "en-US" and .applied == true' >/dev/null <<<"$first"
+jq -e '.imageUrl | endswith("_UHD.jpg")' >/dev/null <<<"$first"
 first_urlbase=$(jq -r '.urlbase' <<<"$first")
 first_path=$(jq -r '.path' <<<"$first")
 [[ -f $first_path ]]
@@ -34,13 +43,61 @@ dry_run=$(fetch --no-apply)
 jq -e '.applied == false' >/dev/null <<<"$dry_run"
 [[ $(wc -l <"$TEST_APPLY_LOG") -eq 2 ]]
 
+third=$(fetch)
+third_urlbase=$(jq -r '.urlbase' <<<"$third")
+[[ $third_urlbase != "$first_urlbase" && $third_urlbase != "$second_urlbase" ]]
+[[ $(jq 'length' "$XDG_STATE_HOME/omarchy/fresh-wallpaper/history.json") -eq 3 ]]
+
+fourth=$(fetch)
+fourth_urlbase=$(jq -r '.urlbase' <<<"$fourth")
+[[ $fourth_urlbase != "$third_urlbase" ]]
+[[ $(wc -l <"$TEST_APPLY_LOG") -eq 4 ]]
+
 if fetch --provider unknown >/dev/null 2>&1; then
   printf 'unsupported provider unexpectedly succeeded\n' >&2
   exit 1
 fi
 
+use_case single-image
+export TEST_BING_FIXTURE=bing-single.json
+only=$(fetch)
+only_again=$(fetch)
+[[ $(jq -r '.urlbase' <<<"$only") == "$(jq -r '.urlbase' <<<"$only_again")" ]]
+[[ $(wc -l <"$TEST_APPLY_LOG") -eq 2 ]]
+
+use_case fallback
+export TEST_FAIL_UHD=1
+export TEST_IMAGE_URL_LOG="$TEST_TMP/fallback/image-urls.log"
+: >"$TEST_IMAGE_URL_LOG"
+fallback=$(fetch --no-apply)
+jq -e '.imageUrl | endswith("_1920x1080.jpg")' >/dev/null <<<"$fallback"
+grep -q '_UHD.jpg$' "$TEST_IMAGE_URL_LOG"
+grep -q '_1920x1080.jpg$' "$TEST_IMAGE_URL_LOG"
+
+use_case prune
+prune_cache_dir="$XDG_CACHE_HOME/omarchy/fresh-wallpaper"
+prune_state_dir="$XDG_STATE_HOME/omarchy/fresh-wallpaper"
+protected_path="$prune_cache_dir/bing-20260815-ThirdWallpaper_EN-US0000000003.jpg"
+mkdir -p "$prune_cache_dir" "$prune_state_dir"
+printf 'cached selected image\n' >"$protected_path"
+touch -d '2026-01-01 00:00:00 UTC' "$protected_path"
+for i in 1 2 3 4 5 6 7 8; do
+  printf 'newer cache entry %s\n' "$i" >"$prune_cache_dir/bing-extra-$i.jpg"
+  touch -d "2026-08-17 00:0${i}:00 UTC" "$prune_cache_dir/bing-extra-$i.jpg"
+done
+printf '%s\n' '["/th?id=OHR.FirstWallpaper_EN-US0000000001","/th?id=OHR.SecondWallpaper_EN-US0000000002"]' \
+  >"$prune_state_dir/history.json"
+printf '%s\n' '{"urlbase":"/th?id=OHR.FirstWallpaper_EN-US0000000001"}' \
+  >"$prune_state_dir/current.json"
+
+pruned=$(fetch --cache-limit 8)
+[[ $(jq -r '.path' <<<"$pruned") == "$protected_path" ]]
+[[ -f $protected_path ]]
+[[ $(find "$prune_cache_dir" -maxdepth 1 -type f -name 'bing-*.jpg' | wc -l) -eq 8 ]]
+[[ ! -e $prune_cache_dir/bing-extra-1.jpg ]]
+
+use_case invalid-image
 export TEST_MIME_TYPE="text/html"
-rm -rf -- "$XDG_CACHE_HOME"
 if fetch --no-apply >/dev/null 2>&1; then
   printf 'invalid image unexpectedly succeeded\n' >&2
   exit 1

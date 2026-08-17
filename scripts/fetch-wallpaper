@@ -44,17 +44,50 @@ valid_jpeg() {
   [[ -s $1 ]] && [[ $(file --brief --mime-type -- "$1") == "image/jpeg" ]]
 }
 
+download_image() {
+  local url="$1"
+  local output="$2"
+
+  curl \
+    --fail \
+    --silent \
+    --show-error \
+    --location \
+    --retry 2 \
+    --retry-delay 1 \
+    --connect-timeout 10 \
+    --max-time 90 \
+    --user-agent "omarchy-fresh-wallpaper/${VERSION}" \
+    --output "$output" \
+    "$url"
+}
+
 prune_cache() {
+  local protected_path="$1"
   local -a entries=()
+  local entry
   local path
+  local keep_count=$CACHE_LIMIT
+  local kept=0
+
+  if [[ -f $protected_path ]]; then
+    keep_count=$((CACHE_LIMIT - 1))
+  fi
 
   mapfile -d '' -t entries < <(
     find "$CACHE_DIR" -maxdepth 1 -type f -name 'bing-*.jpg' -printf '%T@\t%p\0' | sort -z -nr
   )
 
-  for ((i = CACHE_LIMIT; i < ${#entries[@]}; i++)); do
-    path=${entries[$i]#*$'\t'}
-    rm -f -- "$path"
+  for entry in "${entries[@]}"; do
+    path=${entry#*$'\t'}
+    if [[ $path == "$protected_path" ]]; then
+      continue
+    fi
+    if (( kept < keep_count )); then
+      ((kept += 1))
+    else
+      rm -f -- "$path"
+    fi
   done
 }
 
@@ -182,6 +215,7 @@ slug=${slug%-}
 [[ -n $slug ]] || fail "Bing returned an invalid wallpaper identifier"
 
 image_url="https://www.bing.com${urlbase}_UHD.jpg"
+fallback_image_url="https://www.bing.com${urlbase}_1920x1080.jpg"
 image_path="$CACHE_DIR/bing-${start_date}-${slug}.jpg"
 
 if ! valid_jpeg "$image_path"; then
@@ -191,20 +225,12 @@ if ! valid_jpeg "$image_path"; then
   }
   trap cleanup EXIT
 
-  curl \
-    --fail \
-    --silent \
-    --show-error \
-    --location \
-    --retry 2 \
-    --retry-delay 1 \
-    --connect-timeout 10 \
-    --max-time 90 \
-    --user-agent "omarchy-fresh-wallpaper/${VERSION}" \
-    --output "$partial" \
-    "$image_url" || fail "could not download the selected Bing wallpaper"
-
-  valid_jpeg "$partial" || fail "Bing returned a file that is not a JPEG image"
+  if ! download_image "$image_url" "$partial" 2>/dev/null || ! valid_jpeg "$partial"; then
+    image_url=$fallback_image_url
+    download_image "$image_url" "$partial" \
+      || fail "could not download the selected Bing wallpaper in UHD or 1920x1080"
+    valid_jpeg "$partial" || fail "Bing returned a file that is not a JPEG image"
+  fi
   mv -- "$partial" "$image_path"
   partial=""
 fi
@@ -246,7 +272,7 @@ if (( APPLY )); then
     ([$selected] + [$previous[] | select(. != $selected)])[:8]
   ')
   write_json "$HISTORY_FILE" "$next_history"
-  prune_cache
+  prune_cache "$image_path"
 fi
 
 printf '%s\n' "$result"

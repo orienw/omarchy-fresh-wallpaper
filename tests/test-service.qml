@@ -74,6 +74,10 @@ ShellRoot {
         root.fail("initial refresh behavior is incorrect")
         return
       }
+      if (service.scheduleChunkMs !== 60 * 60 * 1000) {
+        root.fail("schedule wake interval is not suspend-safe")
+        return
+      }
 
       var remaining = service.scheduledAtMs() - Date.now()
       var monthlyMs = 30 * 24 * 60 * 60000
@@ -81,6 +85,26 @@ ShellRoot {
         root.fail("monthly schedule has the wrong duration: " + remaining)
         return
       }
+
+      service.lastTrigger = "first-run"
+      service.processFailed("synthetic network failure")
+      var retryRemaining = service.scheduledAtMs() - Date.now()
+      if (retryRemaining < 15 * 60000 - 2000 || retryRemaining > 15 * 60000
+          || service.failureNotified || service.shouldNotifyFailure()) {
+        root.fail("first-run retry behavior is incorrect: " + retryRemaining)
+        return
+      }
+      service.lastTrigger = "retry"
+      if (!service.shouldNotifyFailure()) {
+        root.fail("a repeated startup failure would stay silent")
+        return
+      }
+      service.retryAfterMs = 0
+      service.consecutiveFailures = 0
+      service.lastError = ""
+      service.lastTrigger = ""
+      service.armSchedule()
+
       if (service.normalizedInterval(525601) !== 525600) {
         root.fail("custom interval maximum was not enforced")
         return

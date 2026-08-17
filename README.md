@@ -11,9 +11,10 @@ Its small bar control opens a native configuration panel. The scheduler remains 
 - Changes the wallpaper daily.
 - Does not force another change when the Omarchy shell or plugin reloads.
 - Chooses an image not used yet from Bing's current eight-day archive.
+- Prefers the 3840x2160 image and falls back to 1920x1080 when UHD is unavailable.
 - Starts a new random pass after all available images have been used, without immediately repeating the current image.
-- Keeps the 30 newest downloads and preserves the current wallpaper when a request fails.
-- Shows one failure notification per outage, then stays quiet until a successful update resets the failure state.
+- Keeps the active wallpaper and caps the download cache at 30 images by default.
+- Ignores one transient login failure, then shows at most one notification until an update succeeds.
 
 ## Why Bing first
 
@@ -145,6 +146,12 @@ Run the downloader and scheduler tests without network access or desktop changes
 ```sh
 tests/test-fetch-wallpaper
 tests/test-service
+```
+
+From an active Omarchy Wayland session, smoke-test the real panel and bar widget types. The panel stays closed and no settings are changed:
+
+```sh
+tests/test-ui
 ```
 
 Probe the live Bing source without changing the wallpaper:

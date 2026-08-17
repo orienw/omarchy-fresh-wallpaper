@@ -49,12 +49,13 @@ Item {
   property string lastError: ""
   property string lastTrigger: ""
   property int consecutiveFailures: 0
+  property bool failureNotified: false
   property double scheduleOriginMs: 0
   property double retryAfterMs: 0
   property bool startupResolved: false
   property string pendingStartupTrigger: ""
   readonly property bool running: fetchProcess.running
-  readonly property double scheduleChunkMs: 86400000
+  readonly property double scheduleChunkMs: 3600000
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
@@ -111,8 +112,8 @@ Item {
 
   function scheduledAtMs() {
     if (intervalMinutes <= 0) return 0
-    var due = lastChangeMs() + intervalMinutes * 60000
-    return Math.max(due, retryAfterMs)
+    if (retryAfterMs > 0) return retryAfterMs
+    return lastChangeMs() + intervalMinutes * 60000
   }
 
   function armSchedule() {
@@ -131,7 +132,7 @@ Item {
       scheduleTimer.start()
       return
     }
-    if (Date.now() >= scheduledAtMs()) startRefresh("schedule")
+    if (Date.now() >= scheduledAtMs()) startRefresh(retryAfterMs > 0 ? "retry" : "schedule")
     else armSchedule()
   }
 
@@ -180,12 +181,19 @@ Item {
       currentWallpaper = parsed
       lastError = ""
       consecutiveFailures = 0
+      failureNotified = false
       retryAfterMs = 0
       stateFile.reload()
       armSchedule()
     } catch (error) {
       processFailed("fetch helper returned invalid JSON")
     }
+  }
+
+  function shouldNotifyFailure() {
+    var quietInitialFailure = consecutiveFailures === 1
+      && (lastTrigger === "first-run" || lastTrigger === "startup")
+    return !quietInitialFailure && !failureNotified
   }
 
   function processFailed(message) {
@@ -198,12 +206,13 @@ Item {
     armSchedule()
     console.warn("fresh-wallpaper:", detail)
 
-    if (consecutiveFailures === 1 && !notificationProcess.running) {
+    if (shouldNotifyFailure() && !notificationProcess.running) {
       notificationProcess.command = [
         "omarchy-notification-send",
         "Fresh Wallpaper",
         detail
       ]
+      failureNotified = true
       notificationProcess.running = true
     }
   }

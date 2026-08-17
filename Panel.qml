@@ -21,6 +21,8 @@ Panel {
   readonly property var currentWallpaper: wallpaperService
     ? wallpaperService.currentWallpaper
     : ({})
+  readonly property string previewPath: String(currentWallpaper.path || "")
+  readonly property bool previewPlaceholderVisible: previewPath === ""
   readonly property bool busy: wallpaperService ? wallpaperService.running : false
   readonly property string errorText: wallpaperService ? wallpaperService.lastError : ""
   readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -128,16 +130,16 @@ Panel {
             Image {
               id: previewImage
               anchors.fill: parent
-              source: root.previewSource(root.currentWallpaper.path)
+              source: root.previewSource(root.previewPath)
               asynchronous: true
               cache: false
               fillMode: Image.PreserveAspectCrop
-              visible: source !== ""
+              visible: !root.previewPlaceholderVisible
             }
 
             Text {
               anchors.centerIn: parent
-              visible: previewImage.source === ""
+              visible: root.previewPlaceholderVisible
               text: "󰸉"
               color: Qt.darker(root.foreground, 1.4)
               font.family: root.fontFamily

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+PROJECT_DIR=$(cd "$TEST_DIR/.." && pwd)
+OMARCHY_ROOT=${OMARCHY_PATH:-/usr/share/omarchy}
+IMPORT_ROOT=$(mktemp -d /tmp/fresh-wallpaper-ui-imports.XXXXXX)
+trap 'rm -rf -- "$IMPORT_ROOT"' EXIT
+
+[[ -n ${WAYLAND_DISPLAY:-} && -n ${XDG_RUNTIME_DIR:-} ]] || {
+  printf 'UI smoke test requires an active Wayland session\n' >&2
+  exit 1
+}
+mkdir -p "$IMPORT_ROOT/qs"
+ln -s "$OMARCHY_ROOT/shell/Ui" "$IMPORT_ROOT/qs/Ui"
+ln -s "$OMARCHY_ROOT/shell/Commons" "$IMPORT_ROOT/qs/Commons"
+
+output=$(
+  QML_IMPORT_PATH="$IMPORT_ROOT" \
+  QML2_IMPORT_PATH="$IMPORT_ROOT" \
+  FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
+  FRESH_WALLPAPER_TEST_IMAGE="$TEST_DIR/fixtures/preview.svg" \
+    quickshell --no-color -p "$TEST_DIR/test-ui.qml" 2>&1
+)
+
+if ! grep -q "UI smoke tests passed" <<<"$output"; then
+  printf '%s\n' "$output" >&2
+  exit 1
+fi
+if grep -Eq 'WARN scene:|ERROR qml:|CRITICAL' <<<"$output"; then
+  printf '%s\n' "$output" >&2
+  exit 1
+fi
+
+printf 'UI smoke tests passed\n'
