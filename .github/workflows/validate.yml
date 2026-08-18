@@ -1,0 +1,75 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container: archlinux@sha256:aecf5b39bd3139a951090dfb3d940f9317e4c5fca038c65fb49ac03910f7133e
+
+    steps:
+      - name: Install test dependencies
+        run: >-
+          pacman -Syu --noconfirm --needed
+          curl file git jq quickshell qt6-declarative qt6-svg weston
+
+      - name: Check out the exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out the minimum supported Omarchy release
+        run: >-
+          git clone --quiet --depth 1 --branch v4.0.0
+          https://github.com/basecamp/omarchy.git "$RUNNER_TEMP/omarchy"
+
+      - name: Validate manifest and QML
+        env:
+          OMARCHY_PATH: ${{ runner.temp }}/omarchy
+        run: |
+          set -euo pipefail
+          "$OMARCHY_PATH/bin/omarchy-plugin-validate" .
+          tests/lint-qml
+          test "$(jq -r '.version' manifest.json)" = "$(sed -n 's/^VERSION="\([^"]*\)"$/\1/p' scripts/fetch-wallpaper)"
+
+      - name: Run offline service and downloader tests
+        run: |
+          set -euo pipefail
+          tests/test-fetch-wallpaper
+          tests/test-service
+
+      - name: Run panel smoke tests
+        env:
+          OMARCHY_PATH: ${{ runner.temp }}/omarchy
+        run: |
+          set -euo pipefail
+          export XDG_RUNTIME_DIR="$RUNNER_TEMP/weston-runtime"
+          export WAYLAND_DISPLAY=wayland-ci
+          mkdir -p "$XDG_RUNTIME_DIR"
+          chmod 700 "$XDG_RUNTIME_DIR"
+
+          weston \
+            --backend=headless-backend.so \
+            --renderer=pixman \
+            --socket="$WAYLAND_DISPLAY" \
+            --idle-time=0 \
+            --log="$RUNNER_TEMP/weston.log" &
+          weston_pid=$!
+          trap 'kill "$weston_pid" 2>/dev/null || true' EXIT
+
+          for attempt in {1..50}; do
+            [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]] && break
+            sleep 0.1
+          done
+          if [[ ! -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]]; then
+            cat "$RUNNER_TEMP/weston.log" >&2
+            exit 1
+          fi
+
+          tests/test-ui

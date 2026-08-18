@@ -5,18 +5,42 @@ set -euo pipefail
 TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_DIR=$(cd "$TEST_DIR/.." && pwd)
 OMARCHY_ROOT=${OMARCHY_PATH:-/usr/share/omarchy}
-IMPORT_ROOT=$(mktemp -d /tmp/fresh-wallpaper-ui-imports.XXXXXX)
-trap 'rm -rf -- "$IMPORT_ROOT"' EXIT
+TEST_ROOT=$(mktemp -d /tmp/fresh-wallpaper-ui.XXXXXX)
+IMPORT_ROOT="$TEST_ROOT/imports"
+TEST_RUNTIME="$TEST_ROOT/runtime"
+SESSION_RUNTIME=${XDG_RUNTIME_DIR:-}
+SESSION_WAYLAND=${WAYLAND_DISPLAY:-}
+trap 'rm -rf -- "$TEST_ROOT"' EXIT
 
-[[ -n ${WAYLAND_DISPLAY:-} && -n ${XDG_RUNTIME_DIR:-} ]] || {
+[[ -n $SESSION_WAYLAND && -n $SESSION_RUNTIME ]] || {
   printf 'UI smoke test requires an active Wayland session\n' >&2
   exit 1
 }
-mkdir -p "$IMPORT_ROOT/qs"
+if command -v omarchy-shell >/dev/null 2>&1 \
+    && lock_status=$(omarchy-shell lock status 2>/dev/null); then
+  if jq -e 'if type == "string" then fromjson else . end
+      | .locked or .requested or .pending or .sessionLocked' >/dev/null <<<"$lock_status"; then
+    printf 'UI smoke test requires an unlocked Omarchy session\n' >&2
+    exit 1
+  fi
+fi
+[[ -S $SESSION_RUNTIME/$SESSION_WAYLAND ]] || {
+  printf 'Wayland socket not found: %s\n' "$SESSION_RUNTIME/$SESSION_WAYLAND" >&2
+  exit 1
+}
+
+mkdir -p "$IMPORT_ROOT/qs" "$TEST_RUNTIME"
+chmod 700 "$TEST_RUNTIME"
+ln -s "$SESSION_RUNTIME/$SESSION_WAYLAND" "$TEST_RUNTIME/$SESSION_WAYLAND"
 ln -s "$OMARCHY_ROOT/shell/Ui" "$IMPORT_ROOT/qs/Ui"
 ln -s "$OMARCHY_ROOT/shell/Commons" "$IMPORT_ROOT/qs/Commons"
 
 output=$(
+  XDG_RUNTIME_DIR="$TEST_RUNTIME" \
+  WAYLAND_DISPLAY="$SESSION_WAYLAND" \
+  QT_QUICK_BACKEND=software \
+  QT_OPENGL=software \
+  LIBGL_ALWAYS_SOFTWARE=1 \
   QML_IMPORT_PATH="$IMPORT_ROOT" \
   QML2_IMPORT_PATH="$IMPORT_ROOT" \
   FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \

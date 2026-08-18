@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.orienw.fresh-wallpaper",
   "name": "Fresh Wallpaper",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Orien",
   "license": "MIT",
   "description": "Rotates high-resolution daily wallpapers with a compact native settings panel.",

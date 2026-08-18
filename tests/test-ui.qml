@@ -22,12 +22,14 @@ ShellRoot {
     property string market: "en-US"
     property int intervalMinutes: 1440
     property bool runOnStart: false
+    property int cacheLimit: 30
 
     function startRefresh(trigger) { return trigger }
-    function setProvider(value) { provider = value }
-    function setIntervalMinutes(value) { intervalMinutes = Number(value) }
-    function setMarket(value) { market = value }
-    function setRunOnStart(value) { runOnStart = value === "true" }
+    function setProvider(value) { provider = value; return value }
+    function setIntervalMinutes(value) { intervalMinutes = Number(value); return String(value) }
+    function setMarket(value) { market = value; return value }
+    function setRunOnStart(value) { runOnStart = value === "true"; return value }
+    function setCacheLimit(value) { cacheLimit = Number(value); return String(value) }
   }
 
   QtObject {
@@ -126,6 +128,56 @@ ShellRoot {
           || panel.previewPath !== expectedPath
           || panel.previewSource(panel.previewPath) !== "file://" + encodeURI(expectedPath)) {
         root.fail("populated wallpaper state did not update the preview")
+        return
+      }
+
+      fakeService.intervalMinutes = 0
+      if (panel.selectFrequency("custom") !== "60") {
+        root.fail("selecting Custom did not persist a real interval")
+        return
+      }
+      settingsTimer.start()
+    }
+  }
+
+  Timer {
+    id: settingsTimer
+    interval: 50
+    repeat: false
+    onTriggered: {
+      var panel = panelLoader.item
+      if (fakeService.intervalMinutes !== 60
+          || !panel.customIntervalVisible
+          || panel.customIntervalDraft !== 60
+          || panel.startupCursorIndex !== 6) {
+        root.fail("Custom frequency state was not applied")
+        return
+      }
+
+      panel.cursorIndex = panel.startupCursorIndex
+      if (panel.setCustomInterval("1440") !== "1440"
+          || panel.setCacheLimit(8) !== "8") {
+        root.fail("panel settings did not reach the service")
+        return
+      }
+      finishTimer.start()
+    }
+  }
+
+  Timer {
+    id: finishTimer
+    interval: 50
+    repeat: false
+    onTriggered: {
+      var panel = panelLoader.item
+      if (panel.customIntervalVisible
+          || panel.startupCursorIndex !== 5
+          || panel.cursorIndex !== 5) {
+        root.fail("cursor was not clamped when the Custom row closed")
+        return
+      }
+      if (fakeService.cacheLimit !== 8 || panel.configuredCacheLimit !== 8) {
+        root.fail("cache limit was not applied")
         return
       }
 

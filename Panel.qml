@@ -13,6 +13,7 @@ Panel {
   property var hostWidget: null
   property int cursorIndex: 0
   property bool customIntervalRequested: false
+  property int customIntervalDraft: 60
 
   readonly property var barIdentity: hostWidget || root
   readonly property var wallpaperService: bar && bar.shell
@@ -31,11 +32,15 @@ Panel {
   readonly property int configuredInterval: wallpaperService
     ? wallpaperService.intervalMinutes
     : 1440
+  readonly property int configuredCacheLimit: wallpaperService
+    ? wallpaperService.cacheLimit
+    : 30
   readonly property bool intervalIsPreset: [0, 1440, 10080, 43200]
     .indexOf(configuredInterval) !== -1
   readonly property bool customIntervalVisible: customIntervalRequested || !intervalIsPreset
   readonly property int marketCursorIndex: customIntervalVisible ? 4 : 3
-  readonly property int startupCursorIndex: customIntervalVisible ? 5 : 4
+  readonly property int cacheCursorIndex: customIntervalVisible ? 5 : 4
+  readonly property int startupCursorIndex: customIntervalVisible ? 6 : 5
   readonly property var frequencyOptions: [
     { value: "0", label: "Manual only" },
     { value: "1440", label: "Daily" },
@@ -63,12 +68,45 @@ Panel {
     cursorIndex = Math.max(0, Math.min(startupCursorIndex, cursorIndex + delta))
   }
 
+  function selectFrequency(value) {
+    if (!wallpaperService) return "error: plugin is not ready"
+
+    if (value === "custom") {
+      customIntervalDraft = intervalIsPreset ? 60 : configuredInterval
+      var customResult = wallpaperService.setIntervalMinutes(customIntervalDraft)
+      if (String(customResult).indexOf("error:") === 0) return customResult
+      customIntervalRequested = true
+      Qt.callLater(function() { customIntervalField.field.forceActiveFocus() })
+      return customResult
+    }
+
+    var result = wallpaperService.setIntervalMinutes(value)
+    if (String(result).indexOf("error:") !== 0) customIntervalRequested = false
+    return result
+  }
+
+  function setCustomInterval(value) {
+    if (!wallpaperService) return "error: plugin is not ready"
+    var minutes = Math.floor(Number(value))
+    customIntervalDraft = minutes
+    var result = wallpaperService.setIntervalMinutes(value)
+    if (String(result).indexOf("error:") !== 0)
+      customIntervalRequested = [0, 1440, 10080, 43200].indexOf(minutes) === -1
+    return result
+  }
+
+  function setCacheLimit(value) {
+    if (!wallpaperService) return "error: plugin is not ready"
+    return wallpaperService.setCacheLimit(value)
+  }
+
   function activateCursor() {
     if (cursorIndex === 0 && wallpaperService && !busy) wallpaperService.startRefresh("panel")
     else if (cursorIndex === 1) providerDropdown.toggle()
     else if (cursorIndex === 2) frequencyDropdown.toggle()
     else if (customIntervalVisible && cursorIndex === 3) customIntervalField.field.forceActiveFocus()
     else if (cursorIndex === marketCursorIndex) marketDropdown.toggle()
+    else if (cursorIndex === cacheCursorIndex) cacheLimitField.field.forceActiveFocus()
     else if (cursorIndex === startupCursorIndex && wallpaperService)
       wallpaperService.setRunOnStart(wallpaperService.runOnStart ? "false" : "true")
   }
@@ -84,6 +122,12 @@ Panel {
     if (isNaN(changed.getTime())) return "Wallpaper ready"
     return "Changed " + Qt.formatDateTime(changed, "MMM d, h:mm AP")
   }
+
+  onConfiguredIntervalChanged: {
+    if (configuredInterval > 0) customIntervalDraft = configuredInterval
+    if (intervalIsPreset) customIntervalRequested = false
+  }
+  onStartupCursorIndexChanged: cursorIndex = Math.min(cursorIndex, startupCursorIndex)
 
   KeyboardPanel {
     id: panel
@@ -102,6 +146,7 @@ Panel {
         || frequencyDropdown.popupOpen
         || marketDropdown.popupOpen
         || (root.customIntervalVisible && customIntervalField.field.activeFocus)
+        || cacheLimitField.field.activeFocus
       onMoveRequested: function(dx, dy) {
         var delta = dy !== 0 ? dy : dx
         if (delta !== 0) root.moveCursor(delta)
@@ -262,14 +307,7 @@ Panel {
           fontFamily: root.fontFamily
           hasCursor: root.cursorIndex === 2
           onHovered: function(hovered) { if (hovered) root.cursorIndex = 2 }
-          onChanged: function(value) {
-            if (value === "custom") {
-              root.customIntervalRequested = true
-              return
-            }
-            root.customIntervalRequested = false
-            if (root.wallpaperService) root.wallpaperService.setIntervalMinutes(value)
-          }
+          onChanged: function(value) { root.selectFrequency(value) }
         }
 
         NumberField {
@@ -280,13 +318,15 @@ Panel {
           from: 15
           to: 525600
           stepSize: 15
-          value: root.configuredInterval > 0 ? root.configuredInterval : 1440
+          value: root.customIntervalRequested && root.intervalIsPreset
+            ? root.customIntervalDraft
+            : root.configuredInterval
           foreground: root.foreground
           fontFamily: root.fontFamily
           hasCursor: root.customIntervalVisible && root.cursorIndex === 3
           onHovered: function(hovered) { if (hovered) root.cursorIndex = 3 }
           onModified: function(value) {
-            if (root.wallpaperService) root.wallpaperService.setIntervalMinutes(value)
+            root.setCustomInterval(value)
           }
         }
 
@@ -303,6 +343,21 @@ Panel {
           onChanged: function(value) {
             if (root.wallpaperService) root.wallpaperService.setMarket(value)
           }
+        }
+
+        NumberField {
+          id: cacheLimitField
+          width: parent.width
+          label: "Cached wallpapers"
+          from: 8
+          to: 100
+          stepSize: 1
+          value: root.configuredCacheLimit
+          foreground: root.foreground
+          fontFamily: root.fontFamily
+          hasCursor: root.cursorIndex === root.cacheCursorIndex
+          onHovered: function(hovered) { if (hovered) root.cursorIndex = root.cacheCursorIndex }
+          onModified: function(value) { root.setCacheLimit(value) }
         }
 
         Toggle {

@@ -2,7 +2,7 @@
 
 Fresh Wallpaper is a wallpaper rotation plugin for Omarchy Quattro. It downloads a random unseen image from Bing's recent daily wallpaper collection and applies it through Omarchy's native background command.
 
-Its small bar control opens a native configuration panel. The scheduler remains a headless service inside the Omarchy shell, with no standalone app or separate background process.
+Its small bar control opens a native configuration panel. Fresh Wallpaper runs inside `omarchy-shell`, with no standalone app or separate background process. The bar control is also the plugin's on-switch, so removing or disabling it stops wallpaper rotation.
 
 ![Fresh Wallpaper settings panel](preview.png)
 
@@ -11,6 +11,7 @@ Its small bar control opens a native configuration panel. The scheduler remains 
 - Adds a wallpaper control to the right side of the Omarchy bar.
 - Downloads a UHD Bing wallpaper the first time the plugin is enabled.
 - Changes the wallpaper daily.
+- Schedules Daily, Weekly, and Monthly as elapsed time after the last successful change.
 - Does not force another change when the Omarchy shell or plugin reloads.
 - Chooses an image not used yet from Bing's current eight-day archive.
 - Prefers the 3840x2160 image and falls back to 1920x1080 when UHD is unavailable.
@@ -47,7 +48,9 @@ Enabling adds the bar control and downloads the first wallpaper. Later starts re
 
 ## Use
 
-Click the wallpaper icon to open the panel. The panel shows the current image and attribution, and lets you choose the source, frequency, region, and whether to change the wallpaper when Omarchy starts. Frequency defaults to Daily, with simple Manual, Weekly, and Monthly choices alongside it. Monthly means every 30 days.
+Click the wallpaper icon to open the panel. The panel shows the current image and attribution, and lets you choose the source, frequency, region, cache limit, and whether to change the wallpaper when Omarchy starts. Bing Daily is the only source in version 0.1, with more providers planned. Frequency defaults to Daily, with simple Manual, Weekly, and Monthly choices alongside it.
+
+Daily means 24 hours after the last successful wallpaper change, Weekly means 7 days, and Monthly means 30 days. **Change now** starts that interval again, so these are elapsed schedules rather than fixed calendar times.
 
 Press **Change now** in the panel or middle-click the bar icon to apply another wallpaper immediately.
 
@@ -65,7 +68,7 @@ omarchy-shell fresh-wallpaper status | jq
 
 ## Configure
 
-Use the bar panel for normal configuration. Its primary frequency choices are Manual, Daily, Weekly, and Monthly. Select **Custom minutes...** to reveal the advanced interval field. Every change is saved to Omarchy's native shell configuration.
+Use the bar panel for normal configuration. Its primary frequency choices are Manual, Daily, Weekly, and Monthly. Selecting **Custom minutes...** saves a 60-minute interval and reveals the advanced field for further adjustment. You can also keep between 8 and 100 downloaded wallpapers. Every change is saved to Omarchy's native shell configuration.
 
 Use the commands below for scripting or values not offered as presets.
 
@@ -85,6 +88,12 @@ Control whether every Omarchy shell or plugin start forces an additional wallpap
 
 ```sh
 omarchy-shell fresh-wallpaper setRunOnStart false
+```
+
+Set the maximum number of downloaded wallpapers retained in the cache:
+
+```sh
+omarchy-shell fresh-wallpaper setCacheLimit 30
 ```
 
 The provider setting is ready for future sources. Version 0.1 supports Bing:
@@ -108,7 +117,7 @@ These commands persist settings in the plugin's existing entry in `~/.config/oma
 
 ## Storage and network behavior
 
-Fresh Wallpaper makes HTTPS requests to `www.bing.com`. It stores downloaded images under `${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/fresh-wallpaper/` and rotation metadata under `${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/fresh-wallpaper/`.
+Fresh Wallpaper makes HTTPS requests to `www.bing.com`. Redirects are restricted to HTTPS. Archive responses are capped at 2 MiB and wallpaper downloads at 50 MiB. It stores downloaded images under `${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/fresh-wallpaper/` and rotation metadata under `${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/fresh-wallpaper/`.
 
 The helper validates each response as a non-empty JPEG before changing the desktop. A failed request leaves the current Omarchy background untouched.
 

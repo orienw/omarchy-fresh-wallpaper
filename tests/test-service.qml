@@ -16,6 +16,8 @@ ShellRoot {
     id: fakeShell
 
     property var savedSettings: null
+    property bool acceptWrites: true
+    property int updateCalls: 0
     property var shellConfig: ({
       bar: {
         layout: {
@@ -32,7 +34,14 @@ ShellRoot {
     })
 
     function updateEntryInline(pluginId, settings) {
+      updateCalls++
+      if (!acceptWrites) return false
       savedSettings = settings
+      var copy = JSON.parse(JSON.stringify(shellConfig))
+      var entry = { id: pluginId }
+      for (var key in settings) if (key !== "id") entry[key] = settings[key]
+      copy.bar.layout.right[0] = entry
+      shellConfig = copy
       return true
     }
   }
@@ -109,6 +118,20 @@ ShellRoot {
         root.fail("custom interval maximum was not enforced")
         return
       }
+      if (service.setIntervalMinutes("43200") !== "43200"
+          || service.setRunOnStart("false") !== "false"
+          || fakeShell.updateCalls !== 0) {
+        root.fail("idempotent settings were treated as failed writes")
+        return
+      }
+
+      fakeShell.acceptWrites = false
+      if (service.setIntervalMinutes("525600").indexOf("error:") !== 0
+          || fakeShell.updateCalls !== 1) {
+        root.fail("a rejected setting write was reported as successful")
+        return
+      }
+      fakeShell.acceptWrites = true
       if (service.setIntervalMinutes("525600") !== "525600"
           || !fakeShell.savedSettings
           || fakeShell.savedSettings.intervalMinutes !== 525600) {
@@ -117,6 +140,12 @@ ShellRoot {
       }
       if (service.setIntervalMinutes("525601").indexOf("error:") !== 0) {
         root.fail("out-of-range interval was accepted")
+        return
+      }
+      if (service.setCacheLimit("8") !== "8"
+          || fakeShell.savedSettings.cacheLimit !== 8
+          || service.setCacheLimit("7").indexOf("error:") !== 0) {
+        root.fail("cache limit validation or persistence is incorrect")
         return
       }
 

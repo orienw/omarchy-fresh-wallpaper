@@ -4,6 +4,10 @@ set -euo pipefail
 
 output=""
 url=""
+proto=""
+proto_redir=""
+max_redirs=""
+max_filesize=""
 
 while (( $# > 0 )); do
   case "$1" in
@@ -12,6 +16,22 @@ while (( $# > 0 )); do
       shift 2
       ;;
     --retry | --retry-delay | --connect-timeout | --max-time | --user-agent)
+      shift 2
+      ;;
+    --proto)
+      proto=$2
+      shift 2
+      ;;
+    --proto-redir)
+      proto_redir=$2
+      shift 2
+      ;;
+    --max-redirs)
+      max_redirs=$2
+      shift 2
+      ;;
+    --max-filesize)
+      max_filesize=$2
       shift 2
       ;;
     --fail | --silent | --show-error | --location)
@@ -25,15 +45,22 @@ while (( $# > 0 )); do
 done
 
 if [[ $url == *HPImageArchive.aspx* ]]; then
+  [[ $proto == "=https" && $proto_redir == "=https" && $max_redirs == 3 \
+    && $max_filesize == 2097152 ]] || exit 2
   command cat "$TEST_FIXTURE_DIR/${TEST_BING_FIXTURE:-bing.json}"
   exit 0
 fi
 
 [[ -n $output ]] || exit 1
+[[ $proto == "=https" && $proto_redir == "=https" && $max_redirs == 3 \
+  && $max_filesize == 52428800 ]] || exit 2
 if [[ -n ${TEST_IMAGE_URL_LOG:-} ]]; then
   printf '%s\n' "$url" >> "$TEST_IMAGE_URL_LOG"
 fi
 if [[ ${TEST_FAIL_UHD:-0} == 1 && $url == *_UHD.jpg ]]; then
   exit 22
+fi
+if [[ ${TEST_OVERSIZE_IMAGE:-0} == 1 ]]; then
+  exit 63
 fi
 printf 'mock jpeg for %s\n' "$url" >"$output"

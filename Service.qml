@@ -219,17 +219,18 @@ Item {
 
   function persistSetting(name, value) {
     if (!shell || typeof shell.updateEntryInline !== "function") return false
+    if (settings && settings[name] !== undefined
+        && JSON.stringify(settings[name]) === JSON.stringify(value)) return true
     var next = ({})
     for (var key in settings) if (key !== "id") next[key] = settings[key]
     next[name] = value
-    shell.updateEntryInline(pluginId, next)
-    return true
+    return shell.updateEntryInline(pluginId, next) === true
   }
 
   function setProvider(value) {
     var normalized = String(value || "").trim().toLowerCase()
     if (normalized !== "bing") return "error: supported providers: bing"
-    if (!persistSetting("provider", normalized)) return "error: plugin is not ready"
+    if (!persistSetting("provider", normalized)) return "error: setting could not be saved"
     return normalized
   }
 
@@ -237,14 +238,14 @@ Item {
     var minutes = Math.floor(Number(value))
     if (!isFinite(minutes) || minutes < 0 || (minutes > 0 && minutes < 15) || minutes > 525600)
       return "error: interval must be 0 or 15-525600 minutes"
-    if (!persistSetting("intervalMinutes", minutes)) return "error: plugin is not ready"
+    if (!persistSetting("intervalMinutes", minutes)) return "error: setting could not be saved"
     return String(minutes)
   }
 
   function setMarket(value) {
     var normalized = normalizeMarket(value)
     if (normalized === "") return "error: market must look like en-US"
-    if (!persistSetting("market", normalized)) return "error: plugin is not ready"
+    if (!persistSetting("market", normalized)) return "error: setting could not be saved"
     return normalized
   }
 
@@ -254,8 +255,16 @@ Item {
     if (["true", "1", "on", "yes"].indexOf(normalized) !== -1) enabled = true
     else if (["false", "0", "off", "no"].indexOf(normalized) !== -1) enabled = false
     else return "error: run-on-start must be true or false"
-    if (!persistSetting("runOnStart", enabled)) return "error: plugin is not ready"
+    if (!persistSetting("runOnStart", enabled)) return "error: setting could not be saved"
     return enabled ? "true" : "false"
+  }
+
+  function setCacheLimit(value) {
+    var limit = Math.floor(Number(value))
+    if (!isFinite(limit) || limit < 8 || limit > 100)
+      return "error: cache limit must be 8-100 wallpapers"
+    if (!persistSetting("cacheLimit", limit)) return "error: setting could not be saved"
+    return String(limit)
   }
 
   function normalizeMarket(value) {
@@ -357,6 +366,10 @@ Item {
 
     function setRunOnStart(value: string): string {
       return root.setRunOnStart(value)
+    }
+
+    function setCacheLimit(value: string): string {
+      return root.setCacheLimit(value)
     }
   }
 }

@@ -6,7 +6,9 @@ PROVIDER="bing"
 MARKET="en-US"
 CACHE_LIMIT=30
 APPLY=1
-VERSION="0.1.0"
+VERSION="0.1.1"
+ARCHIVE_MAX_BYTES=2097152
+IMAGE_MAX_BYTES=52428800
 
 usage() {
   cat <<'USAGE'
@@ -53,6 +55,10 @@ download_image() {
     --silent \
     --show-error \
     --location \
+    --proto '=https' \
+    --proto-redir '=https' \
+    --max-redirs 3 \
+    --max-filesize "$IMAGE_MAX_BYTES" \
     --retry 2 \
     --retry-delay 1 \
     --connect-timeout 10 \
@@ -150,6 +156,10 @@ archive=$(curl \
   --silent \
   --show-error \
   --location \
+  --proto '=https' \
+  --proto-redir '=https' \
+  --max-redirs 3 \
+  --max-filesize "$ARCHIVE_MAX_BYTES" \
   --retry 2 \
   --retry-delay 1 \
   --connect-timeout 10 \

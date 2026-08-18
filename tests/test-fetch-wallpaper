@@ -15,7 +15,7 @@ use_case() {
   export XDG_CACHE_HOME="$TEST_TMP/$name/cache"
   export XDG_STATE_HOME="$TEST_TMP/$name/state"
   export TEST_APPLY_LOG="$TEST_TMP/$name/applied.log"
-  unset TEST_BING_FIXTURE TEST_FAIL_UHD TEST_IMAGE_URL_LOG TEST_MIME_TYPE
+  unset TEST_BING_FIXTURE TEST_FAIL_UHD TEST_IMAGE_URL_LOG TEST_MIME_TYPE TEST_OVERSIZE_IMAGE
   mkdir -p "$(dirname "$TEST_APPLY_LOG")"
   : >"$TEST_APPLY_LOG"
 }
@@ -100,6 +100,13 @@ use_case invalid-image
 export TEST_MIME_TYPE="text/html"
 if fetch --no-apply >/dev/null 2>&1; then
   printf 'invalid image unexpectedly succeeded\n' >&2
+  exit 1
+fi
+
+use_case oversized-image
+export TEST_OVERSIZE_IMAGE=1
+if fetch --no-apply >/dev/null 2>&1; then
+  printf 'oversized image unexpectedly succeeded\n' >&2
   exit 1
 fi
 
