@@ -1,3 +1,9 @@
 #!/usr/bin/env bash
 
-printf '%s\n' '{"path":"/tmp/first-wallpaper.jpg","changedAt":"2026-08-17T00:00:00Z"}'
+changed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+result=$(printf '{"path":"/tmp/first-wallpaper.jpg","changedAt":"%s"}' "$changed_at")
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/fresh-wallpaper"
+
+mkdir -p -- "$state_dir"
+printf '%s\n' "$result" >"$state_dir/current.json"
+printf '%s\n' "$result"

@@ -4,6 +4,8 @@ Fresh Wallpaper is a wallpaper rotation plugin for Omarchy Quattro. It downloads
 
 Its small bar control opens a native configuration panel. The scheduler remains a headless service inside the Omarchy shell, with no standalone app or separate background process.
 
+![Fresh Wallpaper settings panel](preview.png)
+
 ## Default behavior
 
 - Adds a wallpaper control to the right side of the Omarchy bar.
@@ -33,6 +35,9 @@ Other providers can be added behind the existing `provider` setting without chan
 These commands are included in a normal Omarchy installation. No sudo or pkexec is required.
 
 ## Install
+
+> [!IMPORTANT]
+> On Omarchy 4.0.0-1, install, update, or edit plugin files only while the session is unlocked. An [upstream shell hot-reload bug](https://github.com/basecamp/omarchy/issues/7106) can strand or crash an active lock screen. Scheduled wallpaper changes are unaffected because they update cache and state files without reloading plugin code.
 
 ```sh
 omarchy plugin add https://github.com/orienw/omarchy-fresh-wallpaper.git --enable
@@ -118,6 +123,8 @@ omarchy plugin update io.github.orienw.fresh-wallpaper
 ```
 
 Omarchy shows the incoming changes before updating, validates the plugin, and reloads it. With **Change on start** left at its default Off setting, that reload keeps the current wallpaper and the existing schedule.
+
+Run updates only while the session is unlocked until the upstream lock-screen reload bug linked in the installation section is fixed.
 
 ## Remove
 

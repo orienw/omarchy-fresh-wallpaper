@@ -66,6 +66,16 @@ ShellRoot {
     interval: 3000
     running: true
     repeat: false
-    onTriggered: if (!root.finished) root.fail("first-run test timed out")
+    onTriggered: {
+      if (root.finished) return
+      var service = serviceLoader.item
+      root.fail("first-run test timed out: initialized=" + Boolean(service && service.initialized)
+        + ", startupResolved=" + Boolean(service && service.startupResolved)
+        + ", lastTrigger=" + String(service ? service.lastTrigger : "")
+        + ", running=" + Boolean(service && service.running)
+        + ", path=" + String(service && service.currentWallpaper
+          ? service.currentWallpaper.path || "" : "")
+        + ", error=" + String(service ? service.lastError : ""))
+    }
   }
 }
