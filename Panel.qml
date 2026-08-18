@@ -174,7 +174,7 @@ Panel {
             Text {
               anchors.centerIn: parent
               visible: root.previewPlaceholderVisible
-              text: "󰸉"
+              text: ""
               color: Qt.darker(root.foreground, 1.4)
               font.family: root.fontFamily
               font.pixelSize: Style.font.displayLarge

@@ -61,7 +61,7 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.wallpaperService && root.wallpaperService.running ? "󰑐" : "󰸉"
+    text: root.wallpaperService && root.wallpaperService.running ? "󰑐" : ""
     active: root.wallpaperService && root.wallpaperService.lastError !== ""
     textRotation: root.wallpaperService && root.wallpaperService.running ? 45 : 0
     tooltipText: root.wallpaperService && root.wallpaperService.running
