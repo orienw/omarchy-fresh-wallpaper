@@ -32,15 +32,11 @@ Panel {
   readonly property int configuredInterval: wallpaperService
     ? wallpaperService.intervalMinutes
     : 1440
-  readonly property int configuredCacheLimit: wallpaperService
-    ? wallpaperService.cacheLimit
-    : 30
   readonly property bool intervalIsPreset: [0, 1440, 10080, 43200]
     .indexOf(configuredInterval) !== -1
   readonly property bool customIntervalVisible: customIntervalRequested || !intervalIsPreset
   readonly property int marketCursorIndex: customIntervalVisible ? 4 : 3
-  readonly property int cacheCursorIndex: customIntervalVisible ? 5 : 4
-  readonly property int startupCursorIndex: customIntervalVisible ? 6 : 5
+  readonly property int startupCursorIndex: customIntervalVisible ? 5 : 4
   readonly property var frequencyOptions: [
     { value: "0", label: "Manual only" },
     { value: "1440", label: "Daily" },
@@ -95,18 +91,12 @@ Panel {
     return result
   }
 
-  function setCacheLimit(value) {
-    if (!wallpaperService) return "error: plugin is not ready"
-    return wallpaperService.setCacheLimit(value)
-  }
-
   function activateCursor() {
     if (cursorIndex === 0 && wallpaperService && !busy) wallpaperService.startRefresh("panel")
     else if (cursorIndex === 1) providerDropdown.toggle()
     else if (cursorIndex === 2) frequencyDropdown.toggle()
     else if (customIntervalVisible && cursorIndex === 3) customIntervalField.field.forceActiveFocus()
     else if (cursorIndex === marketCursorIndex) marketDropdown.toggle()
-    else if (cursorIndex === cacheCursorIndex) cacheLimitField.field.forceActiveFocus()
     else if (cursorIndex === startupCursorIndex && wallpaperService)
       wallpaperService.setRunOnStart(wallpaperService.runOnStart ? "false" : "true")
   }
@@ -146,7 +136,6 @@ Panel {
         || frequencyDropdown.popupOpen
         || marketDropdown.popupOpen
         || (root.customIntervalVisible && customIntervalField.field.activeFocus)
-        || cacheLimitField.field.activeFocus
       onMoveRequested: function(dx, dy) {
         var delta = dy !== 0 ? dy : dx
         if (delta !== 0) root.moveCursor(delta)
@@ -343,21 +332,6 @@ Panel {
           onChanged: function(value) {
             if (root.wallpaperService) root.wallpaperService.setMarket(value)
           }
-        }
-
-        NumberField {
-          id: cacheLimitField
-          width: parent.width
-          label: "Cached wallpapers"
-          from: 8
-          to: 100
-          stepSize: 1
-          value: root.configuredCacheLimit
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          hasCursor: root.cursorIndex === root.cacheCursorIndex
-          onHovered: function(hovered) { if (hovered) root.cursorIndex = root.cacheCursorIndex }
-          onModified: function(value) { root.setCacheLimit(value) }
         }
 
         Toggle {

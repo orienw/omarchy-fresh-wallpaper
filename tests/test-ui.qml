@@ -22,14 +22,12 @@ ShellRoot {
     property string market: "en-US"
     property int intervalMinutes: 1440
     property bool runOnStart: false
-    property int cacheLimit: 30
 
     function startRefresh(trigger) { return trigger }
     function setProvider(value) { provider = value; return value }
     function setIntervalMinutes(value) { intervalMinutes = Number(value); return String(value) }
     function setMarket(value) { market = value; return value }
     function setRunOnStart(value) { runOnStart = value === "true"; return value }
-    function setCacheLimit(value) { cacheLimit = Number(value); return String(value) }
   }
 
   QtObject {
@@ -149,14 +147,13 @@ ShellRoot {
       if (fakeService.intervalMinutes !== 60
           || !panel.customIntervalVisible
           || panel.customIntervalDraft !== 60
-          || panel.startupCursorIndex !== 6) {
+          || panel.startupCursorIndex !== 5) {
         root.fail("Custom frequency state was not applied")
         return
       }
 
       panel.cursorIndex = panel.startupCursorIndex
-      if (panel.setCustomInterval("1440") !== "1440"
-          || panel.setCacheLimit(8) !== "8") {
+      if (panel.setCustomInterval("1440") !== "1440") {
         root.fail("panel settings did not reach the service")
         return
       }
@@ -171,13 +168,9 @@ ShellRoot {
     onTriggered: {
       var panel = panelLoader.item
       if (panel.customIntervalVisible
-          || panel.startupCursorIndex !== 5
-          || panel.cursorIndex !== 5) {
+          || panel.startupCursorIndex !== 4
+          || panel.cursorIndex !== 4) {
         root.fail("cursor was not clamped when the Custom row closed")
-        return
-      }
-      if (fakeService.cacheLimit !== 8 || panel.configuredCacheLimit !== 8) {
-        root.fail("cache limit was not applied")
         return
       }
 

@@ -48,7 +48,7 @@ Enabling adds the bar control and downloads the first wallpaper. Later starts re
 
 ## Use
 
-Click the wallpaper icon to open the panel. The panel shows the current image and attribution, and lets you choose the source, frequency, region, cache limit, and whether to change the wallpaper when Omarchy starts. Bing Daily is the only source in version 0.1, with more providers planned. Frequency defaults to Daily, with simple Manual, Weekly, and Monthly choices alongside it.
+Click the wallpaper icon to open the panel. The panel shows the current image and attribution, and lets you choose the source, frequency, region, and whether to change the wallpaper when Omarchy starts. Bing Daily is the only source in version 0.1, with more providers planned. Frequency defaults to Daily, with simple Manual, Weekly, and Monthly choices alongside it.
 
 Daily means 24 hours after the last successful wallpaper change, Weekly means 7 days, and Monthly means 30 days. **Change now** starts that interval again, so these are elapsed schedules rather than fixed calendar times.
 
@@ -68,7 +68,7 @@ omarchy-shell fresh-wallpaper status | jq
 
 ## Configure
 
-Use the bar panel for normal configuration. Its primary frequency choices are Manual, Daily, Weekly, and Monthly. Selecting **Custom minutes...** saves a 60-minute interval and reveals the advanced field for further adjustment. You can also keep between 8 and 100 downloaded wallpapers. Every change is saved to Omarchy's native shell configuration.
+Use the bar panel for normal configuration. Its primary frequency choices are Manual, Daily, Weekly, and Monthly. Selecting **Custom minutes...** saves a 60-minute interval and reveals the advanced field for further adjustment. Every change is saved to Omarchy's native shell configuration.
 
 Use the commands below for scripting or values not offered as presets.
 
@@ -90,7 +90,7 @@ Control whether every Omarchy shell or plugin start forces an additional wallpap
 omarchy-shell fresh-wallpaper setRunOnStart false
 ```
 
-Set the maximum number of downloaded wallpapers retained in the cache:
+Advanced users can set the maximum number of downloaded wallpapers retained in the cache. The default is 30, and accepted values are 8 through 100:
 
 ```sh
 omarchy-shell fresh-wallpaper setCacheLimit 30
