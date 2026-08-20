@@ -6,7 +6,8 @@ PROVIDER="bing"
 MARKET="en-US"
 CACHE_LIMIT=30
 APPLY=1
-VERSION="0.1.1"
+VERSION="0.1.2"
+NETWORK_WAIT_SECONDS=60
 ARCHIVE_MAX_BYTES=2097152
 IMAGE_MAX_BYTES=52428800
 
@@ -15,17 +16,23 @@ usage() {
 Usage: fetch-wallpaper [options]
 
 Options:
-  --provider <name>       Wallpaper provider (default: bing)
-  --market <locale>       Bing market, such as en-US (default: en-US)
-  --cache-limit <count>   Number of downloaded images to retain (default: 30)
-  --no-apply              Download and report a wallpaper without applying it
-  -h, --help              Show this help
+  --provider <name>              Wallpaper provider (default: bing)
+  --market <locale>              Bing market, such as en-US (default: en-US)
+  --cache-limit <count>          Number of downloaded images to retain (default: 30)
+  --network-wait-seconds <secs>  Wait for HTTPS connectivity before downloading (default: 60)
+  --no-apply                     Download and report a wallpaper without applying it
+  -h, --help                     Show this help
 USAGE
 }
 
 fail() {
   printf 'fresh-wallpaper: %s\n' "$*" >&2
   exit 1
+}
+
+network_unavailable() {
+  printf 'fresh-wallpaper: network is not ready\n' >&2
+  exit 75
 }
 
 require_command() {
@@ -66,6 +73,60 @@ download_image() {
     --user-agent "omarchy-fresh-wallpaper/${VERSION}" \
     --output "$output" \
     "$url"
+}
+
+network_available() {
+  curl \
+    --silent \
+    --show-error \
+    --location \
+    --proto '=https' \
+    --proto-redir '=https' \
+    --max-redirs 3 \
+    --connect-timeout 3 \
+    --max-time 8 \
+    --retry 0 \
+    --user-agent "omarchy-fresh-wallpaper/${VERSION}" \
+    --output /dev/null \
+    "https://www.bing.com/" >/dev/null 2>&1
+}
+
+wait_for_network() {
+  local wait_seconds=$NETWORK_WAIT_SECONDS
+  local deadline=$((SECONDS + wait_seconds))
+  local delay=1
+  local remaining
+  local nm_wait
+
+  if (( wait_seconds > 0 )) && command -v nm-online >/dev/null 2>&1; then
+    nm_wait=$((deadline - SECONDS))
+    if (( nm_wait > 15 )); then
+      nm_wait=15
+    fi
+    if (( nm_wait > 0 )); then
+      nm-online -q -s -t "$nm_wait" >/dev/null 2>&1 || true
+    fi
+  fi
+
+  while true; do
+    if network_available; then
+      return 0
+    fi
+    if (( wait_seconds <= 0 || SECONDS >= deadline )); then
+      return 1
+    fi
+    remaining=$((deadline - SECONDS))
+    if (( remaining < 1 )); then
+      return 1
+    fi
+    if (( delay > remaining )); then
+      delay=$remaining
+    fi
+    sleep "$delay"
+    if (( delay < 8 )); then
+      delay=$((delay * 2))
+    fi
+  done
 }
 
 prune_cache() {
@@ -114,6 +175,11 @@ while (( $# > 0 )); do
       CACHE_LIMIT=$2
       shift 2
       ;;
+    --network-wait-seconds)
+      [[ $# -ge 2 ]] || fail "--network-wait-seconds requires a value"
+      NETWORK_WAIT_SECONDS=$2
+      shift 2
+      ;;
     --no-apply)
       APPLY=0
       shift
@@ -132,6 +198,8 @@ done
 [[ $MARKET =~ ^[A-Za-z]{2,3}-[A-Za-z]{2}$ ]] || fail "invalid Bing market: $MARKET"
 [[ $CACHE_LIMIT =~ ^[0-9]+$ ]] || fail "cache limit must be an integer"
 (( CACHE_LIMIT >= 8 && CACHE_LIMIT <= 100 )) || fail "cache limit must be between 8 and 100"
+[[ $NETWORK_WAIT_SECONDS =~ ^[0-9]+$ ]] || fail "network wait must be an integer"
+(( NETWORK_WAIT_SECONDS <= 3600 )) || fail "network wait must be 0-3600 seconds"
 
 require_command curl
 require_command file
@@ -147,6 +215,10 @@ CURRENT_FILE="$STATE_DIR/current.json"
 HISTORY_FILE="$STATE_DIR/history.json"
 
 mkdir -p -- "$CACHE_DIR" "$STATE_DIR"
+
+if ! wait_for_network; then
+  network_unavailable
+fi
 
 encoded_market=$(jq -rn --arg value "$MARKET" '$value | @uri')
 api_url="https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=${encoded_market}"

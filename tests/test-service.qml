@@ -77,6 +77,10 @@ ShellRoot {
         root.fail("change on start was not off by default")
         return
       }
+      if (service.currentWallpaper.path !== "/tmp/existing-wallpaper.jpg") {
+        root.fail("existing wallpaper state was not loaded before startup resolved")
+        return
+      }
       if (service.initialRefreshTrigger(false, false) !== "first-run"
           || service.initialRefreshTrigger(true, false) !== ""
           || service.initialRefreshTrigger(true, true) !== "startup") {
@@ -85,6 +89,13 @@ ShellRoot {
       }
       if (service.scheduleChunkMs !== 60 * 60 * 1000) {
         root.fail("schedule wake interval is not suspend-safe")
+        return
+      }
+      if (service.networkWaitSeconds("first-run") !== 60
+          || service.networkWaitSeconds("schedule") !== 60
+          || service.networkWaitSeconds("retry") !== 5
+          || service.networkWaitSeconds("panel") !== 10) {
+        root.fail("network wait is not trigger-specific")
         return
       }
 
@@ -110,9 +121,47 @@ ShellRoot {
       }
       service.retryAfterMs = 0
       service.consecutiveFailures = 0
+      service.failureNotified = false
+      service.lastError = ""
+      service.lastTrigger = "schedule"
+      service.processDeferred()
+      var deferRemaining = service.scheduledAtMs() - Date.now()
+      if (service.lastError !== "" || service.failureNotified
+          || deferRemaining < 5000 - 2000 || deferRemaining > 5000) {
+        root.fail("an offline automatic update was treated as a visible failure: " + deferRemaining)
+        return
+      }
+      service.pendingStartupTrigger = "first-run"
+      service.cancelQueuedFirstRun()
+      service.startupResolved = false
+      service.currentWallpaper = ({})
+      service.resolveStartup(false)
+      if (service.pendingStartupTrigger !== "first-run") {
+        root.fail("a missing wallpaper did not queue first-run")
+        return
+      }
+      service.loadState('{"path":"/tmp/existing-wallpaper.jpg","changedAt":"2026-08-19T08:22:47Z"}')
+      if (service.pendingStartupTrigger !== "") {
+        root.fail("a late wallpaper load did not cancel first-run")
+        return
+      }
+      service.pendingStartupTrigger = "first-run"
+      if (service.consumePendingStartupTrigger() !== "") {
+        root.fail("first-run still fired after a wallpaper was present")
+        return
+      }
+      service.currentWallpaper = ({})
+      service.pendingStartupTrigger = "first-run"
+      if (service.consumePendingStartupTrigger() !== "first-run") {
+        root.fail("true first-run was cancelled")
+        return
+      }
+      service.retryAfterMs = 0
+      service.deferCount = 0
       service.lastError = ""
       service.lastTrigger = ""
-      service.armSchedule()
+      service.loadState('{"path":"/tmp/existing-wallpaper.jpg","changedAt":"'
+        + new Date().toISOString() + '"}')
 
       if (service.normalizedInterval(525601) !== 525600) {
         root.fail("custom interval maximum was not enforced")
@@ -148,6 +197,39 @@ ShellRoot {
         root.fail("cache limit validation or persistence is incorrect")
         return
       }
+      if (service.setIntervalMinutes("0") !== "0" || service.intervalMinutes !== 0) {
+        root.fail("manual interval was not persisted")
+        return
+      }
+      service.lastTrigger = "first-run"
+      service.retryAfterMs = 0
+      service.deferCount = 0
+      service.processDeferred()
+      var manualRetryRemaining = service.scheduledAtMs() - Date.now()
+      if (manualRetryRemaining < 5000 - 2000 || manualRetryRemaining > 5000
+          || service.statusPayload().nextRunAt === null) {
+        root.fail("manual mode dropped an automatic offline retry: " + manualRetryRemaining)
+        return
+      }
+      service.retryAfterMs = 0
+      service.lastTrigger = ""
+      service.armSchedule()
+
+      confirmTimer.start()
+    }
+  }
+
+  Timer {
+    id: confirmTimer
+    interval: 1300
+    repeat: false
+    onTriggered: {
+      var service = serviceLoader.item
+      if (service.lastTrigger !== "" || service.running) {
+        root.fail("existing wallpaper triggered an automatic refresh: trigger="
+          + service.lastTrigger)
+        return
+      }
 
       console.log("service schedule tests passed")
       root.finished = true
@@ -156,7 +238,7 @@ ShellRoot {
   }
 
   Timer {
-    interval: 3000
+    interval: 4000
     running: true
     repeat: false
     onTriggered: if (!root.finished) root.fail("test timed out")

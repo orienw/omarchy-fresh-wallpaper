@@ -22,7 +22,7 @@ ShellRoot {
           center: [],
           right: [{
             id: "io.github.orienw.fresh-wallpaper",
-            intervalMinutes: 1440,
+            intervalMinutes: 0,
             runOnStart: false
           }]
         }
@@ -44,18 +44,22 @@ ShellRoot {
   }
 
   Timer {
-    interval: 50
+    interval: 25
     running: true
     repeat: true
     onTriggered: {
       var service = serviceLoader.item
       if (!service || service.lastTrigger !== "first-run" || service.running) return
-      if (service.currentWallpaper.path !== "/tmp/first-wallpaper.jpg") {
-        root.fail("first-run wallpaper was not loaded")
+
+      var retryRemaining = service.scheduledAtMs() - Date.now()
+      if (service.lastError !== "" || service.failureNotified
+          || retryRemaining < 5000 - 1000 || retryRemaining > 5000
+          || service.statusPayload().nextRunAt === null) {
+        root.fail("offline first-run was not deferred in manual mode: " + retryRemaining)
         return
       }
 
-      console.log("service first-run test passed")
+      console.log("service offline deferral test passed")
       root.finished = true
       stop()
       Qt.quit()
@@ -63,19 +67,9 @@ ShellRoot {
   }
 
   Timer {
-    interval: 5000
+    interval: 2000
     running: true
     repeat: false
-    onTriggered: {
-      if (root.finished) return
-      var service = serviceLoader.item
-      root.fail("first-run test timed out: initialized=" + Boolean(service && service.initialized)
-        + ", startupResolved=" + Boolean(service && service.startupResolved)
-        + ", lastTrigger=" + String(service ? service.lastTrigger : "")
-        + ", running=" + Boolean(service && service.running)
-        + ", path=" + String(service && service.currentWallpaper
-          ? service.currentWallpaper.path || "" : "")
-        + ", error=" + String(service ? service.lastError : ""))
-    }
+    onTriggered: if (!root.finished) root.fail("offline deferral test timed out")
   }
 }

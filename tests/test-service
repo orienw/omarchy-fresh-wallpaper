@@ -6,8 +6,13 @@ TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_DIR=$(cd "$TEST_DIR/.." && pwd)
 TEST_RUNTIME=$(mktemp -d /tmp/fresh-wallpaper-runtime.XXXXXX)
 TEST_STATE=$(mktemp -d /tmp/fresh-wallpaper-state.XXXXXX)
+TEST_CACHE=$(mktemp -d /tmp/fresh-wallpaper-cache.XXXXXX)
 FIRST_RUN_STATE=$(mktemp -d /tmp/fresh-wallpaper-first-run-state.XXXXXX)
-trap 'rm -rf -- "$TEST_RUNTIME" "$TEST_STATE" "$FIRST_RUN_STATE"' EXIT
+DUE_STARTUP_STATE=$(mktemp -d /tmp/fresh-wallpaper-due-startup-state.XXXXXX)
+DUE_STARTUP_LOG=$(mktemp /tmp/fresh-wallpaper-due-startup-log.XXXXXX)
+OFFLINE_STATE=$(mktemp -d /tmp/fresh-wallpaper-offline-state.XXXXXX)
+trap 'rm -rf -- "$TEST_RUNTIME" "$TEST_STATE" "$TEST_CACHE" "$FIRST_RUN_STATE" \
+  "$DUE_STARTUP_STATE" "$OFFLINE_STATE"; rm -f -- "$DUE_STARTUP_LOG"' EXIT
 
 chmod 700 "$TEST_RUNTIME"
 STATE_DIR="$TEST_STATE/omarchy/fresh-wallpaper"
@@ -20,6 +25,8 @@ output=$(
   WAYLAND_DISPLAY= \
   XDG_RUNTIME_DIR="$TEST_RUNTIME" \
   XDG_STATE_HOME="$TEST_STATE" \
+  XDG_CACHE_HOME="$TEST_CACHE" \
+  PATH="$TEST_DIR/mocks:$PATH" \
   FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
   QT_QPA_PLATFORM=offscreen \
     quickshell --no-color -p "$TEST_DIR/test-service.qml" 2>&1
@@ -45,4 +52,44 @@ if ! grep -q "service first-run test passed" <<<"$first_run_output"; then
   exit 1
 fi
 
-printf 'service schedule and first-run tests passed\n'
+mkdir -p "$DUE_STARTUP_STATE/omarchy/fresh-wallpaper"
+printf '%s\n' '{"path":"/tmp/existing-wallpaper.jpg","changedAt":"2020-01-01T00:00:00Z"}' \
+  >"$DUE_STARTUP_STATE/omarchy/fresh-wallpaper/current.json"
+
+startup_output=$(
+  WAYLAND_DISPLAY= \
+  XDG_RUNTIME_DIR="$TEST_RUNTIME" \
+  XDG_STATE_HOME="$DUE_STARTUP_STATE" \
+  FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
+  FRESH_WALLPAPER_TEST_PLUGIN_DIR="$TEST_DIR/fixtures/plugin" \
+  FRESH_WALLPAPER_TEST_FETCH_LOG="$DUE_STARTUP_LOG" \
+  QT_QPA_PLATFORM=offscreen \
+    quickshell --no-color -p "$TEST_DIR/test-startup.qml" 2>&1
+)
+
+if ! grep -q "service overdue startup test passed" <<<"$startup_output"; then
+  printf '%s\n' "$startup_output" >&2
+  exit 1
+fi
+if [[ $(wc -l <"$DUE_STARTUP_LOG") -ne 1 ]]; then
+  printf 'overdue startup fetched more than once\n' >&2
+  exit 1
+fi
+
+offline_output=$(
+  WAYLAND_DISPLAY= \
+  XDG_RUNTIME_DIR="$TEST_RUNTIME" \
+  XDG_STATE_HOME="$OFFLINE_STATE" \
+  FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
+  FRESH_WALLPAPER_TEST_PLUGIN_DIR="$TEST_DIR/fixtures/plugin" \
+  FRESH_WALLPAPER_TEST_DEFER=1 \
+  QT_QPA_PLATFORM=offscreen \
+    quickshell --no-color -p "$TEST_DIR/test-offline.qml" 2>&1
+)
+
+if ! grep -q "service offline deferral test passed" <<<"$offline_output"; then
+  printf '%s\n' "$offline_output" >&2
+  exit 1
+fi
+
+printf 'service schedule, first-run, startup, and offline tests passed\n'

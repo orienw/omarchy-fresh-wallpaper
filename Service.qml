@@ -54,6 +54,8 @@ Item {
   property double retryAfterMs: 0
   property bool startupResolved: false
   property string pendingStartupTrigger: ""
+  property int deferCount: 0
+  property bool loadingInitialState: false
   readonly property bool running: fetchProcess.running
   readonly property double scheduleChunkMs: 3600000
 
@@ -88,7 +90,15 @@ Item {
     if (initialized || !shell || sourceDir === "") return
     initialized = true
     scheduleOriginMs = Date.now()
-    stateFile.reload()
+
+    var raw = ""
+    loadingInitialState = true
+    try {
+      raw = stateFile.text()
+    } finally {
+      loadingInitialState = false
+    }
+    loadState(raw)
   }
 
   function initialRefreshTrigger(hasWallpaper, changeOnStart) {
@@ -96,13 +106,52 @@ Item {
     return hasWallpaper ? "" : "first-run"
   }
 
+  function hasCurrentWallpaper() {
+    return String((currentWallpaper && currentWallpaper.path) || "").trim() !== ""
+  }
+
+  function cancelPendingStartupTrigger() {
+    startupTimer.stop()
+    pendingStartupTrigger = ""
+  }
+
+  function cancelQueuedFirstRun() {
+    if (pendingStartupTrigger !== "first-run") return
+    cancelPendingStartupTrigger()
+  }
+
+  function consumePendingStartupTrigger() {
+    var trigger = pendingStartupTrigger
+    pendingStartupTrigger = ""
+    if (trigger === "first-run" && hasCurrentWallpaper()) return ""
+    return trigger
+  }
+
+  function isUserTrigger(trigger) {
+    return trigger === "manual" || trigger === "panel" || trigger === "bar"
+  }
+
+  function networkWaitSeconds(trigger) {
+    if (trigger === "retry") return 5
+    if (isUserTrigger(trigger)) return 10
+    return 60
+  }
+
   function resolveStartup(hasWallpaper) {
-    if (!initialized || startupResolved) return
+    if (!initialized) return
+    if (startupResolved) {
+      if (hasWallpaper) cancelQueuedFirstRun()
+      if (pendingStartupTrigger === "") armSchedule()
+      return
+    }
     startupResolved = true
-    armSchedule()
 
     pendingStartupTrigger = initialRefreshTrigger(hasWallpaper, runOnStart)
-    if (pendingStartupTrigger !== "") startupTimer.start()
+    if (pendingStartupTrigger !== "") {
+      startupTimer.start()
+      return
+    }
+    armSchedule()
   }
 
   function lastChangeMs() {
@@ -111,28 +160,32 @@ Item {
   }
 
   function scheduledAtMs() {
-    if (intervalMinutes <= 0) return 0
     if (retryAfterMs > 0) return retryAfterMs
+    if (intervalMinutes <= 0) return 0
     return lastChangeMs() + intervalMinutes * 60000
   }
 
   function armSchedule() {
     scheduleTimer.stop()
-    if (!initialized || intervalMinutes <= 0) return
+    if (!initialized || pendingStartupTrigger !== "") return
 
-    var remaining = scheduledAtMs() - Date.now()
+    var scheduled = scheduledAtMs()
+    if (scheduled <= 0) return
+    var remaining = scheduled - Date.now()
     scheduleTimer.interval = Math.max(1, Math.min(scheduleChunkMs, Math.ceil(remaining)))
     scheduleTimer.start()
   }
 
   function checkSchedule() {
-    if (!initialized || intervalMinutes <= 0) return
+    if (!initialized) return
+    var scheduled = scheduledAtMs()
+    if (scheduled <= 0) return
     if (fetchProcess.running) {
       scheduleTimer.interval = 60000
       scheduleTimer.start()
       return
     }
-    if (Date.now() >= scheduledAtMs()) startRefresh(retryAfterMs > 0 ? "retry" : "schedule")
+    if (Date.now() >= scheduled) startRefresh(retryAfterMs > 0 ? "retry" : "schedule")
     else armSchedule()
   }
 
@@ -140,6 +193,7 @@ Item {
     if (!initialized || sourceDir === "") return "not ready"
     if (fetchProcess.running) return "already running"
 
+    cancelPendingStartupTrigger()
     lastTrigger = trigger
     lastError = ""
     fetchProcess.command = [
@@ -147,7 +201,8 @@ Item {
       sourceDir + "/scripts/fetch-wallpaper",
       "--provider", provider,
       "--market", market,
-      "--cache-limit", String(cacheLimit)
+      "--cache-limit", String(cacheLimit),
+      "--network-wait-seconds", String(networkWaitSeconds(trigger))
     ]
     fetchProcess.running = true
     return "started"
@@ -156,8 +211,7 @@ Item {
   function loadState(raw) {
     var text = String(raw || "").trim()
     if (text === "") {
-      resolveStartup(false)
-      armSchedule()
+      resolveStartup(hasCurrentWallpaper())
       return
     }
 
@@ -172,7 +226,6 @@ Item {
       console.warn("fresh-wallpaper: could not parse state:", error)
     }
     resolveStartup(hasWallpaper)
-    armSchedule()
   }
 
   function processSucceeded(raw) {
@@ -182,6 +235,7 @@ Item {
       lastError = ""
       consecutiveFailures = 0
       failureNotified = false
+      deferCount = 0
       retryAfterMs = 0
       stateFile.reload()
       armSchedule()
@@ -196,13 +250,22 @@ Item {
     return !quietInitialFailure && !failureNotified
   }
 
+  function processDeferred() {
+    deferCount++
+    retryAfterMs = Date.now() + Math.min(15 * 60000, 5000 * Math.pow(2, deferCount - 1))
+    armSchedule()
+    if (deferCount === 1) console.warn("fresh-wallpaper: waiting for network")
+  }
+
   function processFailed(message) {
     var detail = String(message || "Fresh Wallpaper could not update the background.")
       .replace(/\s+/g, " ").trim()
     if (detail.length > 240) detail = detail.substring(0, 237) + "..."
     lastError = detail
     consecutiveFailures++
-    retryAfterMs = Date.now() + 15 * 60000
+    retryAfterMs = intervalMinutes > 0 || !isUserTrigger(lastTrigger)
+      ? Date.now() + 15 * 60000
+      : 0
     armSchedule()
     console.warn("fresh-wallpaper:", detail)
 
@@ -275,7 +338,8 @@ Item {
   }
 
   function statusPayload() {
-    var nextRunAt = intervalMinutes > 0 ? new Date(scheduledAtMs()).toISOString() : null
+    var scheduled = scheduledAtMs()
+    var nextRunAt = scheduled > 0 ? new Date(scheduled).toISOString() : null
     return {
       provider: provider,
       market: market,
@@ -297,9 +361,12 @@ Item {
 
   Timer {
     id: startupTimer
-    interval: 250
+    interval: 1
     repeat: false
-    onTriggered: root.startRefresh(root.pendingStartupTrigger)
+    onTriggered: {
+      var trigger = root.consumePendingStartupTrigger()
+      if (trigger !== "") root.startRefresh(trigger)
+    }
   }
 
   Timer {
@@ -311,10 +378,12 @@ Item {
   FileView {
     id: stateFile
     path: root.statePath
+    preload: false
+    blockLoading: true
     watchChanges: true
     printErrors: false
-    onLoaded: root.loadState(text())
-    onLoadFailed: root.resolveStartup(false)
+    onLoaded: if (!root.loadingInitialState) root.loadState(text())
+    onLoadFailed: if (!root.loadingInitialState) root.resolveStartup(root.hasCurrentWallpaper())
     onFileChanged: reload()
   }
 
@@ -334,6 +403,7 @@ Item {
     // qmllint disable signal-handler-parameters
     onExited: function(exitCode, exitStatus) {
       if (exitCode === 0) root.processSucceeded(fetchStdout.text)
+      else if (exitCode === 75 && !root.isUserTrigger(root.lastTrigger)) root.processDeferred()
       else root.processFailed(fetchStderr.text || "Wallpaper update failed with exit code " + exitCode)
     }
     // qmllint enable signal-handler-parameters

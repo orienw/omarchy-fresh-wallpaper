@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.orienw.fresh-wallpaper",
   "name": "Fresh Wallpaper",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": "Orien",
   "license": "MIT",
   "description": "Automatically refreshes your desktop with high-resolution wallpapers on a daily, weekly, monthly, or custom schedule.",

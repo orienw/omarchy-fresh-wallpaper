@@ -15,7 +15,8 @@ use_case() {
   export XDG_CACHE_HOME="$TEST_TMP/$name/cache"
   export XDG_STATE_HOME="$TEST_TMP/$name/state"
   export TEST_APPLY_LOG="$TEST_TMP/$name/applied.log"
-  unset TEST_BING_FIXTURE TEST_FAIL_UHD TEST_IMAGE_URL_LOG TEST_MIME_TYPE TEST_OVERSIZE_IMAGE
+  unset TEST_BING_FIXTURE TEST_FAIL_UHD TEST_IMAGE_URL_LOG TEST_MIME_TYPE TEST_OFFLINE \
+    TEST_OVERSIZE_IMAGE
   mkdir -p "$(dirname "$TEST_APPLY_LOG")"
   : >"$TEST_APPLY_LOG"
 }
@@ -107,6 +108,20 @@ use_case oversized-image
 export TEST_OVERSIZE_IMAGE=1
 if fetch --no-apply >/dev/null 2>&1; then
   printf 'oversized image unexpectedly succeeded\n' >&2
+  exit 1
+fi
+
+if fetch --no-apply --network-wait-seconds 3601 >/dev/null 2>&1; then
+  printf 'out-of-range network wait unexpectedly succeeded\n' >&2
+  exit 1
+fi
+
+use_case offline
+export TEST_OFFLINE=1
+offline_status=0
+fetch --no-apply --network-wait-seconds 0 >/dev/null 2>&1 || offline_status=$?
+if [[ $offline_status -ne 75 ]]; then
+  printf 'offline fetch exited %s, expected 75\n' "$offline_status" >&2
   exit 1
 fi
 

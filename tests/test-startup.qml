@@ -22,8 +22,8 @@ ShellRoot {
           center: [],
           right: [{
             id: "io.github.orienw.fresh-wallpaper",
-            intervalMinutes: 1440,
-            runOnStart: false
+            intervalMinutes: 15,
+            runOnStart: true
           }]
         }
       },
@@ -44,38 +44,41 @@ ShellRoot {
   }
 
   Timer {
-    interval: 50
+    interval: 25
     running: true
     repeat: true
     onTriggered: {
       var service = serviceLoader.item
-      if (!service || service.lastTrigger !== "first-run" || service.running) return
+      if (!service || service.lastTrigger !== "startup" || service.running) return
       if (service.currentWallpaper.path !== "/tmp/first-wallpaper.jpg") {
-        root.fail("first-run wallpaper was not loaded")
+        root.fail("startup wallpaper was not loaded")
         return
       }
-
-      console.log("service first-run test passed")
-      root.finished = true
       stop()
+      settleTimer.start()
+    }
+  }
+
+  Timer {
+    id: settleTimer
+    interval: 1300
+    repeat: false
+    onTriggered: {
+      var service = serviceLoader.item
+      if (service.running) {
+        root.fail("startup launched a second refresh")
+        return
+      }
+      console.log("service overdue startup test passed")
+      root.finished = true
       Qt.quit()
     }
   }
 
   Timer {
-    interval: 5000
+    interval: 4000
     running: true
     repeat: false
-    onTriggered: {
-      if (root.finished) return
-      var service = serviceLoader.item
-      root.fail("first-run test timed out: initialized=" + Boolean(service && service.initialized)
-        + ", startupResolved=" + Boolean(service && service.startupResolved)
-        + ", lastTrigger=" + String(service ? service.lastTrigger : "")
-        + ", running=" + Boolean(service && service.running)
-        + ", path=" + String(service && service.currentWallpaper
-          ? service.currentWallpaper.path || "" : "")
-        + ", error=" + String(service ? service.lastError : ""))
-    }
+    onTriggered: if (!root.finished) root.fail("overdue startup test timed out")
   }
 }

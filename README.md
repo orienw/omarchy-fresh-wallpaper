@@ -17,7 +17,8 @@ Its small bar control opens a native configuration panel. Fresh Wallpaper runs i
 - Prefers the 3840x2160 image and falls back to 1920x1080 when UHD is unavailable.
 - Starts a new random pass after all available images have been used, without immediately repeating the current image.
 - Keeps the active wallpaper and caps the download cache at 30 images by default.
-- Ignores one transient login failure, then shows at most one notification until an update succeeds.
+- Waits for the network after login instead of treating a connecting link as a wallpaper failure.
+- Retries quietly while offline, then shows at most one notification for a real download failure until an update succeeds.
 
 ## Why Bing first
 
@@ -117,7 +118,7 @@ These commands persist settings in the plugin's existing entry in `~/.config/oma
 
 ## Storage and network behavior
 
-Fresh Wallpaper makes HTTPS requests to `www.bing.com`. Redirects are restricted to HTTPS. Archive responses are capped at 2 MiB and wallpaper downloads at 50 MiB. It stores downloaded images under `${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/fresh-wallpaper/` and rotation metadata under `${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/fresh-wallpaper/`.
+Fresh Wallpaper makes HTTPS requests to `www.bing.com`. Redirects are restricted to HTTPS. Archive responses are capped at 2 MiB and wallpaper downloads at 50 MiB. Automatic updates wait for NetworkManager and a successful HTTPS probe before downloading, then retry quietly if the machine is still offline. It stores downloaded images under `${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/fresh-wallpaper/` and rotation metadata under `${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/fresh-wallpaper/`.
 
 The helper validates each response as a non-empty JPEG before changing the desktop. A failed request leaves the current Omarchy background untouched.
 
