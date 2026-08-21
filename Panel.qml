@@ -189,6 +189,7 @@ Panel {
             Text {
               width: parent.width
               text: root.currentWallpaper.title || "Fresh Wallpaper"
+              textFormat: Text.PlainText
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.subtitle
@@ -224,6 +225,7 @@ Panel {
           visible: text !== ""
           width: parent.width
           text: root.currentWallpaper.copyright || ""
+          textFormat: Text.PlainText
           color: Qt.darker(root.foreground, 1.4)
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
