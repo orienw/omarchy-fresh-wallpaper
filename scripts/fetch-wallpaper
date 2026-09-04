@@ -273,6 +273,7 @@ candidates=$(jq -c --argjson seen "$history" '
 ' <<<"$all_candidates")
 
 if (( $(jq 'length' <<<"$candidates") == 0 )); then
+  history='[]'
   candidates=$(jq -c --arg current "$current_urlbase" '[.[] | select(.urlbase != $current)]' <<<"$all_candidates")
 fi
 if (( $(jq 'length' <<<"$candidates") == 0 )); then

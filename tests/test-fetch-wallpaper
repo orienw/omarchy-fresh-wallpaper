@@ -66,6 +66,26 @@ only_again=$(fetch)
 [[ $(jq -r '.urlbase' <<<"$only") == "$(jq -r '.urlbase' <<<"$only_again")" ]]
 [[ $(wc -l <"$TEST_APPLY_LOG") -eq 2 ]]
 
+use_case full-passes
+mkdir -p "$TEST_TMP/full-passes/bin"
+printf '#!/bin/sh\nprintf "0\\n"\n' >"$TEST_TMP/full-passes/bin/shuf"
+chmod +x "$TEST_TMP/full-passes/bin/shuf"
+previous=""
+for pass in 1 2 3; do
+  seen=()
+  for pick in 1 2 3; do
+    result=$(PATH="$TEST_TMP/full-passes/bin:$PATH" fetch)
+    selected=$(jq -r '.urlbase' <<<"$result")
+    [[ $selected != "$previous" ]]
+    seen+=("$selected")
+    previous=$selected
+  done
+  if [[ $(printf '%s\n' "${seen[@]}" | sort -u | wc -l) -ne 3 ]]; then
+    printf 'shuffle pass %s repeated an image before exhausting the archive\n' "$pass" >&2
+    exit 1
+  fi
+done
+
 use_case fallback
 export TEST_FAIL_UHD=1
 export TEST_IMAGE_URL_LOG="$TEST_TMP/fallback/image-urls.log"
