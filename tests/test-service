@@ -11,14 +11,19 @@ FIRST_RUN_STATE=$(mktemp -d /tmp/fresh-wallpaper-first-run-state.XXXXXX)
 DUE_STARTUP_STATE=$(mktemp -d /tmp/fresh-wallpaper-due-startup-state.XXXXXX)
 DUE_STARTUP_LOG=$(mktemp /tmp/fresh-wallpaper-due-startup-log.XXXXXX)
 OFFLINE_STATE=$(mktemp -d /tmp/fresh-wallpaper-offline-state.XXXXXX)
+RECOVERY_STATE=$(mktemp -d /tmp/fresh-wallpaper-recovery.XXXXXX)
 trap 'rm -rf -- "$TEST_RUNTIME" "$TEST_STATE" "$TEST_CACHE" "$FIRST_RUN_STATE" \
-  "$DUE_STARTUP_STATE" "$OFFLINE_STATE"; rm -f -- "$DUE_STARTUP_LOG"' EXIT
+  "$DUE_STARTUP_STATE" "$OFFLINE_STATE" "$RECOVERY_STATE"; rm -f -- "$DUE_STARTUP_LOG"' EXIT
+
+export FRESH_WALLPAPER_TEST_IMAGE="$TEST_DIR/fixtures/wallpaper.jpg"
+export FRESH_WALLPAPER_TEST_BACKGROUND="$TEST_CACHE/current-background"
 
 chmod 700 "$TEST_RUNTIME"
 STATE_DIR="$TEST_STATE/omarchy/fresh-wallpaper"
 STATE_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 mkdir -p "$STATE_DIR"
-printf '{"path":"/tmp/existing-wallpaper.jpg","changedAt":"%s"}\n' "$STATE_TIMESTAMP" \
+jq -cn --arg path "$FRESH_WALLPAPER_TEST_IMAGE" --arg changedAt "$STATE_TIMESTAMP" \
+  '{path: $path, changedAt: $changedAt}' \
   > "$STATE_DIR/current.json"
 
 output=$(
@@ -53,7 +58,8 @@ if ! grep -q "service first-run test passed" <<<"$first_run_output"; then
 fi
 
 mkdir -p "$DUE_STARTUP_STATE/omarchy/fresh-wallpaper"
-printf '%s\n' '{"path":"/tmp/existing-wallpaper.jpg","changedAt":"2020-01-01T00:00:00Z"}' \
+jq -cn --arg path "$FRESH_WALLPAPER_TEST_IMAGE" \
+  '{path: $path, changedAt: "2020-01-01T00:00:00Z"}' \
   >"$DUE_STARTUP_STATE/omarchy/fresh-wallpaper/current.json"
 
 startup_output=$(
@@ -92,4 +98,31 @@ if ! grep -q "service offline deferral test passed" <<<"$offline_output"; then
   exit 1
 fi
 
-printf 'service schedule, first-run, startup, and offline tests passed\n'
+for recovery_case in missing replaced; do
+  recovery_dir="$RECOVERY_STATE/$recovery_case"
+  mkdir -p "$recovery_dir/omarchy/fresh-wallpaper"
+  jq -cn --arg path "$recovery_dir/deleted.jpg" --arg changedAt "$STATE_TIMESTAMP" \
+    '{path: $path, changedAt: $changedAt}' >"$recovery_dir/omarchy/fresh-wallpaper/current.json"
+  if [[ $recovery_case == missing ]]; then
+    ln -s "$recovery_dir/deleted.jpg" "$recovery_dir/background"
+  else
+    ln -s "$FRESH_WALLPAPER_TEST_IMAGE" "$recovery_dir/background"
+  fi
+  recovery_output=$(
+    WAYLAND_DISPLAY= \
+    XDG_RUNTIME_DIR="$TEST_RUNTIME" \
+    XDG_STATE_HOME="$recovery_dir" \
+    FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
+    FRESH_WALLPAPER_TEST_PLUGIN_DIR="$TEST_DIR/fixtures/plugin" \
+    FRESH_WALLPAPER_TEST_BACKGROUND="$recovery_dir/background" \
+    FRESH_WALLPAPER_TEST_RECOVERY="$recovery_case" \
+    QT_QPA_PLATFORM=offscreen \
+      quickshell --no-color -p "$TEST_DIR/test-recovery.qml" 2>&1
+  )
+  if ! grep -q 'service recovery test passed' <<<"$recovery_output"; then
+    printf '%s\n' "$recovery_output" >&2
+    exit 1
+  fi
+done
+
+printf 'service schedule, first-run, startup, offline, and recovery tests passed\n'

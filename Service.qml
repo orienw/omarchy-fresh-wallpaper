@@ -17,6 +17,7 @@ Item {
   readonly property string home: Quickshell.env("HOME")
   readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || home + "/.local/state"
   readonly property string statePath: stateHome + "/omarchy/fresh-wallpaper/current.json"
+  property string currentBackgroundLink: home + "/.local/state/omarchy/current/background"
 
   readonly property var settings: findSettings()
 
@@ -45,6 +46,7 @@ Item {
   readonly property int cacheLimit: intSetting("cacheLimit", 30, 8, 100)
 
   property bool initialized: false
+  property bool initializing: false
   property var currentWallpaper: ({})
   property string lastError: ""
   property string lastTrigger: ""
@@ -88,8 +90,8 @@ Item {
   }
 
   function initialize() {
-    if (initialized || !shell || sourceDir === "") return
-    initialized = true
+    if (initialized || initializing || !shell || sourceDir === "") return
+    initializing = true
     scheduleOriginMs = Date.now()
 
     var raw = ""
@@ -100,6 +102,28 @@ Item {
       loadingInitialState = false
     }
     loadState(raw)
+    if (!hasCurrentWallpaper() || runOnStart) finishInitialization(hasCurrentWallpaper())
+    else checkInitialWallpaper()
+  }
+
+  function checkInitialWallpaper() {
+    var path = String((currentWallpaper && currentWallpaper.path) || "")
+    if (path === "") {
+      finishInitialization(false)
+      return
+    }
+    initialWallpaperCheck.command = [
+      "bash", "-c", '[[ -f "$1" && -s "$1" ]] || [[ -f "$2" && -s "$2" ]]',
+      "fresh-wallpaper", path, currentBackgroundLink
+    ]
+    initialWallpaperCheck.running = true
+  }
+
+  function finishInitialization(hasWallpaper) {
+    if (!hasWallpaper) currentWallpaper = ({})
+    initialized = true
+    initializing = false
+    resolveStartup(hasWallpaper)
   }
 
   function initialRefreshTrigger(hasWallpaper, changeOnStart) {
@@ -397,6 +421,17 @@ Item {
     onLoaded: if (!root.loadingInitialState) root.loadState(text())
     onLoadFailed: if (!root.loadingInitialState) root.resolveStartup(root.hasCurrentWallpaper())
     onFileChanged: reload()
+  }
+
+  Process {
+    id: initialWallpaperCheck
+    // qmllint disable signal-handler-parameters
+    onExited: function(exitCode) {
+      var path = String((root.currentWallpaper && root.currentWallpaper.path) || "")
+      if (path !== command[4]) root.checkInitialWallpaper()
+      else root.finishInitialization(exitCode === 0)
+    }
+    // qmllint enable signal-handler-parameters
   }
 
   Process {

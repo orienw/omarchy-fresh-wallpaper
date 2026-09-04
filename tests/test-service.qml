@@ -5,6 +5,7 @@ ShellRoot {
   id: root
 
   property bool finished: false
+  readonly property string existingWallpaperPath: Quickshell.env("FRESH_WALLPAPER_TEST_IMAGE")
 
   function fail(message) {
     console.error("TEST FAILURE:", message)
@@ -50,6 +51,7 @@ ShellRoot {
     id: serviceLoader
     source: "file://" + Quickshell.env("FRESH_WALLPAPER_PROJECT_DIR") + "/Service.qml"
     onLoaded: {
+      item.currentBackgroundLink = Quickshell.env("FRESH_WALLPAPER_TEST_BACKGROUND")
       item.shell = fakeShell
       item.manifest = {
         id: "io.github.orienw.fresh-wallpaper",
@@ -77,7 +79,7 @@ ShellRoot {
         root.fail("change on start was not off by default")
         return
       }
-      if (service.currentWallpaper.path !== "/tmp/existing-wallpaper.jpg") {
+      if (service.currentWallpaper.path !== root.existingWallpaperPath) {
         root.fail("existing wallpaper state was not loaded before startup resolved")
         return
       }
@@ -140,7 +142,7 @@ ShellRoot {
         root.fail("a missing wallpaper did not queue first-run")
         return
       }
-      service.loadState('{"path":"/tmp/existing-wallpaper.jpg","changedAt":"2026-08-19T08:22:47Z"}')
+      service.loadState(JSON.stringify({path: root.existingWallpaperPath, changedAt: "2026-08-19T08:22:47Z"}))
       if (service.pendingStartupTrigger !== "") {
         root.fail("a late wallpaper load did not cancel first-run")
         return
@@ -160,8 +162,7 @@ ShellRoot {
       service.deferCount = 0
       service.lastError = ""
       service.lastTrigger = ""
-      service.loadState('{"path":"/tmp/existing-wallpaper.jpg","changedAt":"'
-        + new Date().toISOString() + '"}')
+      service.loadState(JSON.stringify({path: root.existingWallpaperPath, changedAt: new Date().toISOString()}))
 
       if (service.normalizedInterval(525601) !== 525600) {
         root.fail("custom interval maximum was not enforced")
