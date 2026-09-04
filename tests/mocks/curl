@@ -94,4 +94,4 @@ fi
 if [[ ${TEST_OVERSIZE_IMAGE:-0} == 1 ]]; then
   exit 63
 fi
-printf 'mock jpeg for %s\n' "$url" >"$output"
+cp -- "$TEST_FIXTURE_DIR/${TEST_IMAGE_FIXTURE:-wallpaper.jpg}" "$output"

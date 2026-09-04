@@ -50,7 +50,7 @@ write_json() {
 }
 
 valid_jpeg() {
-  [[ -s $1 ]] && [[ $(file --brief --mime-type -- "$1") == "image/jpeg" ]]
+  [[ -s $1 ]] && djpeg -strict -outfile /dev/null "$1" 2>/dev/null
 }
 
 download_image() {
@@ -202,7 +202,7 @@ done
 (( NETWORK_WAIT_SECONDS <= 3600 )) || fail "network wait must be 0-3600 seconds"
 
 require_command curl
-require_command file
+require_command djpeg
 require_command jq
 require_command shuf
 if (( APPLY )); then require_command omarchy; fi

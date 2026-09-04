@@ -31,7 +31,7 @@ Other providers can be added behind the existing `provider` setting without chan
 - Omarchy 4.0 or newer
 - `curl`
 - `jq`
-- `file`
+- `djpeg` (from `libjpeg-turbo`)
 - GNU core utilities
 
 These commands are included in a normal Omarchy installation. No sudo or pkexec is required.
@@ -120,7 +120,7 @@ These commands persist settings in the plugin's existing entry in `~/.config/oma
 
 Fresh Wallpaper makes HTTPS requests to `www.bing.com`. Redirects are restricted to HTTPS. Archive responses are capped at 2 MiB and wallpaper downloads at 50 MiB. Automatic updates wait for NetworkManager and a successful HTTPS probe before downloading, then retry quietly if the machine is still offline. It stores downloaded images under `${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/fresh-wallpaper/` and rotation metadata under `${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/fresh-wallpaper/`.
 
-The helper validates each response as a non-empty JPEG before changing the desktop. A failed request leaves the current Omarchy background untouched.
+The helper fully decodes each JPEG before changing the desktop, rejecting incomplete or corrupt downloads and cache entries. A failed request leaves the current Omarchy background untouched.
 
 Bing images remain copyrighted by their respective owners. Use them as personal desktop wallpapers and inspect the preserved attribution with the status command.
 

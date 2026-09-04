@@ -15,7 +15,7 @@ use_case() {
   export XDG_CACHE_HOME="$TEST_TMP/$name/cache"
   export XDG_STATE_HOME="$TEST_TMP/$name/state"
   export TEST_APPLY_LOG="$TEST_TMP/$name/applied.log"
-  unset TEST_BING_FIXTURE TEST_FAIL_UHD TEST_IMAGE_URL_LOG TEST_MIME_TYPE TEST_OFFLINE \
+  unset TEST_BING_FIXTURE TEST_FAIL_UHD TEST_IMAGE_URL_LOG TEST_IMAGE_FIXTURE TEST_OFFLINE \
     TEST_OVERSIZE_IMAGE
   mkdir -p "$(dirname "$TEST_APPLY_LOG")"
   : >"$TEST_APPLY_LOG"
@@ -80,7 +80,7 @@ prune_cache_dir="$XDG_CACHE_HOME/omarchy/fresh-wallpaper"
 prune_state_dir="$XDG_STATE_HOME/omarchy/fresh-wallpaper"
 protected_path="$prune_cache_dir/bing-20260815-ThirdWallpaper_EN-US0000000003.jpg"
 mkdir -p "$prune_cache_dir" "$prune_state_dir"
-printf 'cached selected image\n' >"$protected_path"
+cp -- "$TEST_FIXTURE_DIR/wallpaper.jpg" "$protected_path"
 touch -d '2026-01-01 00:00:00 UTC' "$protected_path"
 for i in 1 2 3 4 5 6 7 8; do
   printf 'newer cache entry %s\n' "$i" >"$prune_cache_dir/bing-extra-$i.jpg"
@@ -98,11 +98,31 @@ pruned=$(fetch --cache-limit 8)
 [[ ! -e $prune_cache_dir/bing-extra-1.jpg ]]
 
 use_case invalid-image
-export TEST_MIME_TYPE="text/html"
+export TEST_IMAGE_FIXTURE=preview.svg
 if fetch --no-apply >/dev/null 2>&1; then
   printf 'invalid image unexpectedly succeeded\n' >&2
   exit 1
 fi
+
+use_case truncated-image
+export TEST_IMAGE_FIXTURE=truncated.jpg
+[[ $(file --brief --mime-type "$TEST_FIXTURE_DIR/$TEST_IMAGE_FIXTURE") == image/jpeg ]]
+if fetch >/dev/null 2>&1; then
+  printf 'truncated JPEG unexpectedly succeeded\n' >&2
+  exit 1
+fi
+[[ ! -s $TEST_APPLY_LOG ]]
+[[ ! -e $XDG_STATE_HOME/omarchy/fresh-wallpaper/current.json ]]
+
+use_case corrupt-cache
+export TEST_BING_FIXTURE=bing-single.json
+cached=$(fetch)
+cached_path=$(jq -r '.path' <<<"$cached")
+cp -- "$TEST_FIXTURE_DIR/truncated.jpg" "$cached_path"
+repaired=$(fetch)
+[[ $(jq -r '.path' <<<"$repaired") == "$cached_path" ]]
+djpeg -strict -outfile /dev/null "$cached_path"
+[[ $(wc -l <"$TEST_APPLY_LOG") -eq 2 ]]
 
 use_case oversized-image
 export TEST_OVERSIZE_IMAGE=1

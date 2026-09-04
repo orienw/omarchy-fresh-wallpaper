@@ -17,7 +17,7 @@ jobs:
       - name: Install test dependencies
         run: >-
           pacman -Syu --noconfirm --needed
-          curl file git jq quickshell qt6-declarative qt6-svg weston
+          curl file git jq libjpeg-turbo quickshell qt6-declarative qt6-svg weston
 
       - name: Check out the exact revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
