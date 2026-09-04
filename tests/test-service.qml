@@ -197,8 +197,24 @@ ShellRoot {
         root.fail("cache limit validation or persistence is incorrect")
         return
       }
+      service.lastTrigger = "schedule"
+      service.processDeferred()
+      service.lastTrigger = "retry"
+      service.processDeferred()
       if (service.setIntervalMinutes("0") !== "0" || service.intervalMinutes !== 0) {
         root.fail("manual interval was not persisted")
+        return
+      }
+      if (service.scheduledAtMs() !== 0 || service.statusPayload().nextRunAt !== null) {
+        root.fail("switching to Manual retained a scheduled retry")
+        return
+      }
+      service.setIntervalMinutes("15")
+      service.lastTrigger = "schedule"
+      service.setIntervalMinutes("0")
+      service.processDeferred()
+      if (service.scheduledAtMs() !== 0) {
+        root.fail("a scheduled fetch queued a retry after switching to Manual")
         return
       }
       service.lastTrigger = "first-run"

@@ -53,6 +53,8 @@ Click the wallpaper icon to open the panel. The panel shows the current image an
 
 Daily means 24 hours after the last successful wallpaper change, Weekly means 7 days, and Monthly means 30 days. **Change now** starts that interval again, so these are elapsed schedules rather than fixed calendar times.
 
+Selecting Manual cancels pending retries from scheduled rotations. First-run and Change on start updates can still retry while offline.
+
 Press **Change now** in the panel or middle-click the bar icon to apply another wallpaper immediately.
 
 The shell commands remain available for shortcuts and automation:

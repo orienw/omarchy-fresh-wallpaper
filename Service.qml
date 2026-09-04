@@ -52,6 +52,7 @@ Item {
   property bool failureNotified: false
   property double scheduleOriginMs: 0
   property double retryAfterMs: 0
+  property string retryOrigin: ""
   property bool startupResolved: false
   property string pendingStartupTrigger: ""
   property int deferCount: 0
@@ -237,6 +238,7 @@ Item {
       failureNotified = false
       deferCount = 0
       retryAfterMs = 0
+      retryOrigin = ""
       stateFile.reload()
       armSchedule()
     } catch (error) {
@@ -252,9 +254,16 @@ Item {
 
   function processDeferred() {
     deferCount++
-    retryAfterMs = Date.now() + Math.min(15 * 60000, 5000 * Math.pow(2, deferCount - 1))
-    armSchedule()
+    queueRetry(Math.min(15 * 60000, 5000 * Math.pow(2, deferCount - 1)))
     if (deferCount === 1) console.warn("fresh-wallpaper: waiting for network")
+  }
+
+  function queueRetry(delayMs) {
+    if (lastTrigger !== "retry") retryOrigin = lastTrigger
+    var allowed = intervalMinutes > 0
+      || (retryOrigin !== "schedule" && !isUserTrigger(retryOrigin))
+    retryAfterMs = allowed ? Date.now() + delayMs : 0
+    armSchedule()
   }
 
   function processFailed(message) {
@@ -263,10 +272,7 @@ Item {
     if (detail.length > 240) detail = detail.substring(0, 237) + "..."
     lastError = detail
     consecutiveFailures++
-    retryAfterMs = intervalMinutes > 0 || !isUserTrigger(lastTrigger)
-      ? Date.now() + 15 * 60000
-      : 0
-    armSchedule()
+    queueRetry(15 * 60000)
     console.warn("fresh-wallpaper:", detail)
 
     if (shouldNotifyFailure() && !notificationProcess.running) {
@@ -356,7 +362,13 @@ Item {
 
   onManifestChanged: Qt.callLater(initialize)
   onShellChanged: Qt.callLater(initialize)
-  onIntervalMinutesChanged: Qt.callLater(armSchedule)
+  onIntervalMinutesChanged: {
+    if (intervalMinutes === 0 && retryOrigin === "schedule") {
+      retryAfterMs = 0
+      deferCount = 0
+    }
+    Qt.callLater(armSchedule)
+  }
   Component.onCompleted: Qt.callLater(initialize)
 
   Timer {
