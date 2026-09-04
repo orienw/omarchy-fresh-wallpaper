@@ -238,6 +238,7 @@ Panel {
           visible: root.errorText !== ""
           width: parent.width
           text: root.errorText
+          textFormat: Text.PlainText
           color: root.urgent
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption

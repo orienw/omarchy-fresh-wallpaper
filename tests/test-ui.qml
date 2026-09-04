@@ -5,6 +5,8 @@ ShellRoot {
   id: root
 
   property bool finished: false
+  readonly property string untrustedMarkup: "<img src=\""
+    + Quickshell.env("FRESH_WALLPAPER_TEST_UNTRUSTED_IMAGE") + "\">"
 
   function fail(message) {
     console.error("TEST FAILURE:", message)
@@ -17,7 +19,7 @@ ShellRoot {
 
     property var currentWallpaper: ({})
     property bool running: false
-    property string lastError: ""
+    property string lastError: "curl: (3) invalid URL: " + root.untrustedMarkup
     property string provider: "bing"
     property string market: "en-US"
     property int intervalMinutes: 1440
@@ -110,7 +112,11 @@ ShellRoot {
       }
 
       stop()
-      fakeService.currentWallpaper = ({ path: Quickshell.env("FRESH_WALLPAPER_TEST_IMAGE") })
+      fakeService.currentWallpaper = ({
+        path: Quickshell.env("FRESH_WALLPAPER_TEST_IMAGE"),
+        title: root.untrustedMarkup,
+        copyright: root.untrustedMarkup
+      })
       updateTimer.start()
     }
   }

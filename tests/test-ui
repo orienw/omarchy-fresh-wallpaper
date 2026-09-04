@@ -45,6 +45,7 @@ output=$(
   QML2_IMPORT_PATH="$IMPORT_ROOT" \
   FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
   FRESH_WALLPAPER_TEST_IMAGE="$TEST_DIR/fixtures/preview.svg" \
+  FRESH_WALLPAPER_TEST_UNTRUSTED_IMAGE="file://$TEST_ROOT/untrusted.jpg" \
     quickshell --no-color -p "$TEST_DIR/test-ui.qml" 2>&1
 )
 
@@ -52,7 +53,7 @@ if ! grep -q "UI smoke tests passed" <<<"$output"; then
   printf '%s\n' "$output" >&2
   exit 1
 fi
-if grep -Eq 'WARN scene:|ERROR qml:|CRITICAL' <<<"$output"; then
+if grep -Eq 'WARN scene:|ERROR qml:|CRITICAL|Error loading image' <<<"$output"; then
   printf '%s\n' "$output" >&2
   exit 1
 fi
