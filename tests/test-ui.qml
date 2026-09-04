@@ -124,16 +124,16 @@ ShellRoot {
   Timer {
     id: updateTimer
     interval: 50
-    repeat: false
+    repeat: true
     onTriggered: {
       var panel = panelLoader.item
       var expectedPath = Quickshell.env("FRESH_WALLPAPER_TEST_IMAGE")
-      if (panel.previewPlaceholderVisible
-          || panel.previewPath !== expectedPath
-          || panel.previewSource(panel.previewPath) !== "file://" + encodeURI(expectedPath)) {
+      if (panel.previewPath !== expectedPath) {
         root.fail("populated wallpaper state did not update the preview")
         return
       }
+      if (panel.previewPlaceholderVisible) return
+      stop()
 
       fakeService.intervalMinutes = 0
       if (panel.selectFrequency("custom") !== "60") {

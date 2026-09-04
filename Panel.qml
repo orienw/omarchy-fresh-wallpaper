@@ -23,7 +23,7 @@ Panel {
     ? wallpaperService.currentWallpaper
     : ({})
   readonly property string previewPath: String(currentWallpaper.path || "")
-  readonly property bool previewPlaceholderVisible: previewPath === ""
+  readonly property bool previewPlaceholderVisible: previewImage.status !== Image.Ready
   readonly property bool busy: wallpaperService ? wallpaperService.running : false
   readonly property string errorText: wallpaperService ? wallpaperService.lastError : ""
   readonly property color foreground: bar ? bar.foreground : Color.foreground
@@ -101,11 +101,6 @@ Panel {
       wallpaperService.setRunOnStart(wallpaperService.runOnStart ? "false" : "true")
   }
 
-  function previewSource(path) {
-    var value = String(path || "")
-    return value === "" ? "" : "file://" + encodeURI(value)
-  }
-
   function changedLabel(value) {
     if (!value) return "Waiting for the first wallpaper"
     var changed = new Date(String(value))
@@ -164,7 +159,7 @@ Panel {
             Image {
               id: previewImage
               anchors.fill: parent
-              source: root.previewSource(root.previewPath)
+              source: Util.fileUrl(root.previewPath)
               asynchronous: true
               cache: false
               fillMode: Image.PreserveAspectCrop
