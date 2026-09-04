@@ -16,6 +16,7 @@ Its small bar control opens a native configuration panel. Fresh Wallpaper runs i
 - Recovers a missing cached wallpaper on startup, while preserving an available background selected outside the plugin.
 - Chooses an image not used yet from Bing's current eight-day archive.
 - Prefers the 3840x2160 image and falls back to 1920x1080 when UHD is unavailable.
+- Retries UHD on later selections when only a 1080p copy is cached.
 - Starts a new random pass after all available images have been used, without immediately repeating the current image.
 - Keeps the active wallpaper and caps the download cache at 30 images by default.
 - Waits for the network after login instead of treating a connecting link as a wallpaper failure.

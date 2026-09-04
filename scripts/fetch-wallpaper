@@ -299,7 +299,8 @@ slug=${slug%-}
 
 image_url="https://www.bing.com${urlbase}_UHD.jpg"
 fallback_image_url="https://www.bing.com${urlbase}_1920x1080.jpg"
-image_path="$CACHE_DIR/bing-${start_date}-${slug}.jpg"
+image_base="$CACHE_DIR/bing-${start_date}-${slug}"
+image_path="${image_base}-UHD.jpg"
 
 if ! valid_jpeg "$image_path"; then
   partial=$(mktemp "$CACHE_DIR/.download.XXXXXX")
@@ -308,14 +309,18 @@ if ! valid_jpeg "$image_path"; then
   }
   trap cleanup EXIT
 
-  if ! download_image "$image_url" "$partial" 2>/dev/null || ! valid_jpeg "$partial"; then
+  if download_image "$image_url" "$partial" 2>/dev/null && valid_jpeg "$partial"; then
+    mv -- "$partial" "$image_path"
+  else
     image_url=$fallback_image_url
-    download_image "$image_url" "$partial" \
-      || fail "could not download the selected Bing wallpaper in UHD or 1920x1080"
-    valid_jpeg "$partial" || fail "Bing returned a file that is not a JPEG image"
+    image_path="${image_base}-1920x1080.jpg"
+    if ! valid_jpeg "$image_path"; then
+      download_image "$image_url" "$partial" \
+        || fail "could not download the selected Bing wallpaper in UHD or 1920x1080"
+      valid_jpeg "$partial" || fail "Bing returned a file that is not a JPEG image"
+      mv -- "$partial" "$image_path"
+    fi
   fi
-  mv -- "$partial" "$image_path"
-  partial=""
 fi
 
 changed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)

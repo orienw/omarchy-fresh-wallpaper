@@ -87,6 +87,7 @@ for pass in 1 2 3; do
 done
 
 use_case fallback
+export TEST_BING_FIXTURE=bing-single.json
 export TEST_FAIL_UHD=1
 export TEST_IMAGE_URL_LOG="$TEST_TMP/fallback/image-urls.log"
 : >"$TEST_IMAGE_URL_LOG"
@@ -95,10 +96,35 @@ jq -e '.imageUrl | endswith("_1920x1080.jpg")' >/dev/null <<<"$fallback"
 grep -q '_UHD.jpg$' "$TEST_IMAGE_URL_LOG"
 grep -q '_1920x1080.jpg$' "$TEST_IMAGE_URL_LOG"
 
+fallback_again=$(fetch --no-apply)
+jq -e '.imageUrl | endswith("_1920x1080.jpg")' >/dev/null <<<"$fallback_again"
+[[ $(jq -r '.path' <<<"$fallback_again") == "$(jq -r '.path' <<<"$fallback")" ]]
+[[ $(wc -l <"$TEST_IMAGE_URL_LOG") -eq 3 ]]
+
+unset TEST_FAIL_UHD
+upgraded=$(fetch --no-apply)
+jq -e '.imageUrl | endswith("_UHD.jpg")' >/dev/null <<<"$upgraded"
+[[ $(jq -r '.path' <<<"$upgraded") != "$(jq -r '.path' <<<"$fallback")" ]]
+[[ $(wc -l <"$TEST_IMAGE_URL_LOG") -eq 4 ]]
+fetch --no-apply >/dev/null
+[[ $(wc -l <"$TEST_IMAGE_URL_LOG") -eq 4 ]]
+[[ $(find "$XDG_CACHE_HOME" -name '.download.*' | wc -l) -eq 0 ]]
+
+use_case legacy-cache
+export TEST_BING_FIXTURE=bing-single.json
+export TEST_IMAGE_URL_LOG="$TEST_TMP/legacy-cache/image-urls.log"
+legacy_path="$XDG_CACHE_HOME/omarchy/fresh-wallpaper/bing-20260817-OnlyWallpaper_EN-US0000000001.jpg"
+mkdir -p "$(dirname "$legacy_path")"
+cp -- "$TEST_FIXTURE_DIR/wallpaper.jpg" "$legacy_path"
+fresh=$(fetch --no-apply)
+[[ $(jq -r '.path' <<<"$fresh") != "$legacy_path" ]]
+grep -q '_UHD.jpg$' "$TEST_IMAGE_URL_LOG"
+[[ -f $legacy_path ]]
+
 use_case prune
 prune_cache_dir="$XDG_CACHE_HOME/omarchy/fresh-wallpaper"
 prune_state_dir="$XDG_STATE_HOME/omarchy/fresh-wallpaper"
-protected_path="$prune_cache_dir/bing-20260815-ThirdWallpaper_EN-US0000000003.jpg"
+protected_path="$prune_cache_dir/bing-20260815-ThirdWallpaper_EN-US0000000003-UHD.jpg"
 mkdir -p "$prune_cache_dir" "$prune_state_dir"
 cp -- "$TEST_FIXTURE_DIR/wallpaper.jpg" "$protected_path"
 touch -d '2026-01-01 00:00:00 UTC' "$protected_path"
