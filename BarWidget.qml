@@ -16,6 +16,7 @@ BarWidget {
     : false
 
   function injectPanel() {
+    if (wallpaperService) wallpaperService.settings = root.settings
     var target = panelLoader.item
     if (!target) return
     target.bar = root.bar
@@ -45,6 +46,7 @@ BarWidget {
 
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
+  onWallpaperServiceChanged: injectPanel()
 
   Loader {
     id: panelLoader

@@ -24,6 +24,7 @@ ShellRoot {
     property string market: "en-US"
     property int intervalMinutes: 1440
     property bool runOnStart: false
+    property var settings: ({})
 
     function startRefresh(trigger) { return trigger }
     function setProvider(value) { provider = value; return value }
@@ -108,6 +109,11 @@ ShellRoot {
       }
       if (widget.wallpaperService !== fakeService) {
         root.fail("bar widget did not resolve the wallpaper service")
+        return
+      }
+      widget.settings = {intervalMinutes: 43200, market: "en-GB"}
+      if (fakeService.settings.intervalMinutes !== 43200 || fakeService.settings.market !== "en-GB") {
+        root.fail("bar settings did not reach the service")
         return
       }
 

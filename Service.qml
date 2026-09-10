@@ -18,7 +18,7 @@ Item {
   readonly property string statePath: stateHome + "/omarchy/fresh-wallpaper/current.json"
   property string currentBackgroundLink: home + "/.local/state/omarchy/current/background"
 
-  readonly property var settings: findSettings()
+  property var settings: findSettings()
 
   function findSettings() {
     var config = shell && shell.shellConfig ? shell.shellConfig : null
