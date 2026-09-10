@@ -33,14 +33,11 @@ ShellRoot {
 
   Loader {
     id: serviceLoader
-    source: "file://" + Quickshell.env("FRESH_WALLPAPER_PROJECT_DIR") + "/Service.qml"
+    source: Quickshell.env("FRESH_WALLPAPER_TEST_SERVICE_URL")
     onLoaded: {
       item.currentBackgroundLink = Quickshell.env("FRESH_WALLPAPER_TEST_BACKGROUND")
       item.shell = fakeShell
-      item.manifest = {
-        id: "io.github.orienw.fresh-wallpaper",
-        __sourceDir: Quickshell.env("FRESH_WALLPAPER_TEST_PLUGIN_DIR")
-      }
+      item.manifest = {id: "io.github.orienw.fresh-wallpaper"}
     }
   }
 

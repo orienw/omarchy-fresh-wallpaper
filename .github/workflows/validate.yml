@@ -11,6 +11,9 @@ jobs:
   validate:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    strategy:
+      matrix:
+        omarchy: [v4.0.0, v4.0.3]
     container: archlinux@sha256:aecf5b39bd3139a951090dfb3d940f9317e4c5fca038c65fb49ac03910f7133e
 
     steps:
@@ -24,9 +27,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check out the minimum supported Omarchy release
+      - name: Check out Omarchy ${{ matrix.omarchy }}
         run: >-
-          git clone --quiet --depth 1 --branch v4.0.0
+          git clone --quiet --depth 1 --branch ${{ matrix.omarchy }}
           https://github.com/basecamp/omarchy.git "$RUNNER_TEMP/omarchy"
 
       - name: Validate manifest and QML
@@ -39,6 +42,8 @@ jobs:
           test "$(jq -r '.version' manifest.json)" = "$(sed -n 's/^VERSION="\([^"]*\)"$/\1/p' scripts/fetch-wallpaper)"
 
       - name: Run offline service and downloader tests
+        env:
+          OMARCHY_PATH: ${{ runner.temp }}/omarchy
         run: |
           set -euo pipefail
           tests/test-fetch-wallpaper

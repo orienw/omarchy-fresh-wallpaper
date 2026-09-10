@@ -47,16 +47,31 @@ ShellRoot {
     }
   }
 
+  Component.onCompleted: {
+    var apiUrl = Quickshell.env("FRESH_WALLPAPER_TEST_SHELL_API")
+    if (apiUrl !== "") shellLoader.setSource(apiUrl, {pluginId: "io.github.orienw.fresh-wallpaper"})
+    else serviceLoader.active = true
+  }
+
+  Loader {
+    id: shellLoader
+    onLoaded: {
+      item.barConfig = Qt.binding(function() { return fakeShell.shellConfig.bar })
+      item._updateSettings = function(pluginId, settings) {
+        return fakeShell.updateEntryInline(pluginId, settings)
+      }
+      serviceLoader.active = true
+    }
+  }
+
   Loader {
     id: serviceLoader
-    source: "file://" + Quickshell.env("FRESH_WALLPAPER_PROJECT_DIR") + "/Service.qml"
+    active: false
+    source: Quickshell.env("FRESH_WALLPAPER_TEST_SERVICE_URL")
     onLoaded: {
       item.currentBackgroundLink = Quickshell.env("FRESH_WALLPAPER_TEST_BACKGROUND")
-      item.shell = fakeShell
-      item.manifest = {
-        id: "io.github.orienw.fresh-wallpaper",
-        __sourceDir: Quickshell.env("FRESH_WALLPAPER_PROJECT_DIR")
-      }
+      item.shell = shellLoader.item || fakeShell
+      item.manifest = {id: "io.github.orienw.fresh-wallpaper"}
       checkTimer.start()
     }
   }

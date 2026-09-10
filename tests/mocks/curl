@@ -71,7 +71,7 @@ fi
 if [[ $url == "https://www.bing.com/" || $url == "https://www.bing.com" ]]; then
   [[ $proto == "=https" && $proto_redir == "=https" && $max_redirs == 3 \
     && $connect_timeout == 3 && $max_time == 8 && $retry == 0 \
-    && $user_agent == "omarchy-fresh-wallpaper/0.1.3" && $output == /dev/null ]] || exit 2
+    && $user_agent == "omarchy-fresh-wallpaper/0.1.4" && $output == /dev/null ]] || exit 2
   exit 0
 fi
 

@@ -4,6 +4,7 @@ set -euo pipefail
 
 TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_DIR=$(cd "$TEST_DIR/.." && pwd)
+OMARCHY_ROOT=${OMARCHY_PATH:-/usr/share/omarchy}
 TEST_RUNTIME=$(mktemp -d /tmp/fresh-wallpaper-runtime.XXXXXX)
 TEST_STATE=$(mktemp -d /tmp/fresh-wallpaper-state.XXXXXX)
 TEST_CACHE=$(mktemp -d /tmp/fresh-wallpaper-cache.XXXXXX)
@@ -19,35 +20,45 @@ export FRESH_WALLPAPER_TEST_IMAGE="$TEST_DIR/fixtures/wallpaper.jpg"
 export FRESH_WALLPAPER_TEST_BACKGROUND="$TEST_CACHE/current-background"
 
 chmod 700 "$TEST_RUNTIME"
+TEST_PLUGIN_DIR="$TEST_RUNTIME/plugin #?%"
+mkdir -p "$TEST_PLUGIN_DIR/scripts"
+cp -- "$PROJECT_DIR/Service.qml" "$TEST_PLUGIN_DIR/Service.qml"
+cp -- "$TEST_DIR/fixtures/plugin/scripts/fetch-wallpaper" "$TEST_PLUGIN_DIR/scripts/fetch-wallpaper"
+export FRESH_WALLPAPER_TEST_SERVICE_URL
+FRESH_WALLPAPER_TEST_SERVICE_URL=$(jq -rn --arg path "$TEST_PLUGIN_DIR/Service.qml" \
+  '"file://" + ($path | split("/") | map(@uri) | join("/"))')
 STATE_DIR="$TEST_STATE/omarchy/fresh-wallpaper"
-STATE_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 mkdir -p "$STATE_DIR"
-jq -cn --arg path "$FRESH_WALLPAPER_TEST_IMAGE" --arg changedAt "$STATE_TIMESTAMP" \
-  '{path: $path, changedAt: $changedAt}' \
-  > "$STATE_DIR/current.json"
 
-output=$(
-  WAYLAND_DISPLAY= \
-  XDG_RUNTIME_DIR="$TEST_RUNTIME" \
-  XDG_STATE_HOME="$TEST_STATE" \
-  XDG_CACHE_HOME="$TEST_CACHE" \
-  PATH="$TEST_DIR/mocks:$PATH" \
-  FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
-  QT_QPA_PLATFORM=offscreen \
-    quickshell --no-color -p "$TEST_DIR/test-service.qml" 2>&1
-)
-
-if ! grep -q "service schedule tests passed" <<<"$output"; then
-  printf '%s\n' "$output" >&2
-  exit 1
+shell_apis=("")
+if [[ -f $OMARCHY_ROOT/shell/services/PluginShellApi.qml ]]; then
+  shell_apis+=("file://$OMARCHY_ROOT/shell/services/PluginShellApi.qml")
 fi
+for shell_api in "${shell_apis[@]}"; do
+  STATE_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  jq -cn --arg path "$FRESH_WALLPAPER_TEST_IMAGE" --arg changedAt "$STATE_TIMESTAMP" \
+    '{path: $path, changedAt: $changedAt}' > "$STATE_DIR/current.json"
+  output=$(
+    WAYLAND_DISPLAY= \
+    XDG_RUNTIME_DIR="$TEST_RUNTIME" \
+    XDG_STATE_HOME="$TEST_STATE" \
+    XDG_CACHE_HOME="$TEST_CACHE" \
+    PATH="$TEST_DIR/mocks:$PATH" \
+    FRESH_WALLPAPER_TEST_SHELL_API="$shell_api" \
+    QT_QPA_PLATFORM=offscreen \
+      quickshell --no-color -p "$TEST_DIR/test-service.qml" 2>&1
+  )
+
+  if ! grep -q "service schedule tests passed" <<<"$output"; then
+    printf '%s\n' "$output" >&2
+    exit 1
+  fi
+done
 
 first_run_output=$(
   WAYLAND_DISPLAY= \
   XDG_RUNTIME_DIR="$TEST_RUNTIME" \
   XDG_STATE_HOME="$FIRST_RUN_STATE" \
-  FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
-  FRESH_WALLPAPER_TEST_PLUGIN_DIR="$TEST_DIR/fixtures/plugin" \
   QT_QPA_PLATFORM=offscreen \
     quickshell --no-color -p "$TEST_DIR/test-first-run.qml" 2>&1
 )
@@ -66,8 +77,6 @@ startup_output=$(
   WAYLAND_DISPLAY= \
   XDG_RUNTIME_DIR="$TEST_RUNTIME" \
   XDG_STATE_HOME="$DUE_STARTUP_STATE" \
-  FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
-  FRESH_WALLPAPER_TEST_PLUGIN_DIR="$TEST_DIR/fixtures/plugin" \
   FRESH_WALLPAPER_TEST_FETCH_LOG="$DUE_STARTUP_LOG" \
   QT_QPA_PLATFORM=offscreen \
     quickshell --no-color -p "$TEST_DIR/test-startup.qml" 2>&1
@@ -86,8 +95,6 @@ offline_output=$(
   WAYLAND_DISPLAY= \
   XDG_RUNTIME_DIR="$TEST_RUNTIME" \
   XDG_STATE_HOME="$OFFLINE_STATE" \
-  FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
-  FRESH_WALLPAPER_TEST_PLUGIN_DIR="$TEST_DIR/fixtures/plugin" \
   FRESH_WALLPAPER_TEST_DEFER=1 \
   QT_QPA_PLATFORM=offscreen \
     quickshell --no-color -p "$TEST_DIR/test-offline.qml" 2>&1
@@ -112,8 +119,6 @@ for recovery_case in missing replaced; do
     WAYLAND_DISPLAY= \
     XDG_RUNTIME_DIR="$TEST_RUNTIME" \
     XDG_STATE_HOME="$recovery_dir" \
-    FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
-    FRESH_WALLPAPER_TEST_PLUGIN_DIR="$TEST_DIR/fixtures/plugin" \
     FRESH_WALLPAPER_TEST_BACKGROUND="$recovery_dir/background" \
     FRESH_WALLPAPER_TEST_RECOVERY="$recovery_case" \
     QT_QPA_PLATFORM=offscreen \

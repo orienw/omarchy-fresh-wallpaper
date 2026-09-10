@@ -11,9 +11,8 @@ Item {
   readonly property string pluginId: manifest && manifest.id
     ? String(manifest.id)
     : "io.github.orienw.fresh-wallpaper"
-  readonly property string sourceDir: manifest && manifest.__sourceDir
-    ? String(manifest.__sourceDir)
-    : ""
+  readonly property string sourceDir: decodeURIComponent(String(Qt.resolvedUrl("."))
+    .replace(/^file:\/\//, "")).replace(/\/$/, "")
   readonly property string home: Quickshell.env("HOME")
   readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || home + "/.local/state"
   readonly property string statePath: stateHome + "/omarchy/fresh-wallpaper/current.json"
@@ -23,7 +22,8 @@ Item {
 
   function findSettings() {
     var config = shell && shell.shellConfig ? shell.shellConfig : null
-    var layout = config && config.bar && config.bar.layout ? config.bar.layout : null
+    var barConfig = shell && shell.barConfig ? shell.barConfig : (config ? config.bar : null)
+    var layout = barConfig ? barConfig.layout : null
     var sections = ["left", "center", "right"]
     for (var s = 0; s < sections.length; s++) {
       var widgets = layout && Array.isArray(layout[sections[s]]) ? layout[sections[s]] : []
