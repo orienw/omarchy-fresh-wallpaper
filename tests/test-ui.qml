@@ -167,7 +167,7 @@ ShellRoot {
       if (fakeService.intervalMinutes !== 60
           || !panel.customIntervalVisible
           || panel.customIntervalDraft !== 60
-          || panel.startupCursorIndex !== 6) {
+          || panel.startupCursorIndex !== 7) {
         root.fail("Custom frequency state was not applied")
         return
       }
@@ -201,6 +201,15 @@ ShellRoot {
         root.fail("the keyboard cursor stopped on an unavailable Previous button")
         return
       }
+      if (panel.bingLink("/search?q=aspens") !== "https://www.bing.com/search?q=aspens"
+          || panel.bingLink("https://www.bing.com/search?q=aspens") !== "https://www.bing.com/search?q=aspens"
+          || panel.bingLink("https://www.bing.com.example.com/") !== ""
+          || panel.bingLink("https://bing.com@example.com/") !== ""
+          || panel.bingLink("//example.com/") !== ""
+          || panel.bingLink("javascript:alert(1)") !== "") {
+        root.fail("the Learn more link accepted a non-Bing address")
+        return
+      }
       fakeService.previousAvailable = true
       panel.cursorIndex = 0
       panel.moveCursor(1)
@@ -226,8 +235,8 @@ ShellRoot {
     onTriggered: {
       var panel = panelLoader.item
       if (panel.customIntervalVisible
-          || panel.startupCursorIndex !== 5
-          || panel.cursorIndex !== 5) {
+          || panel.startupCursorIndex !== 6
+          || panel.cursorIndex !== 6) {
         root.fail("cursor was not clamped when the Custom row closed")
         return
       }

@@ -32,6 +32,9 @@ Panel {
     : String(currentWallpaper.path || "")
   readonly property bool previewPlaceholderVisible: previewImage.status !== Image.Ready
   readonly property bool busy: wallpaperService ? wallpaperService.running : false
+  readonly property string learnMoreUrl: showingExternalBackground
+    ? ""
+    : bingLink(currentWallpaper.copyrightLink)
   readonly property bool previousAvailable: wallpaperService
     ? wallpaperService.previousAvailable === true
     : false
@@ -48,7 +51,8 @@ Panel {
     .indexOf(configuredInterval) !== -1
   readonly property bool customIntervalVisible: customIntervalRequested || !intervalIsPreset
   readonly property int previousCursorIndex: 1
-  readonly property int sourceCursorIndex: 2
+  readonly property int learnMoreCursorIndex: 2
+  readonly property int sourceCursorIndex: 3
   readonly property int frequencyCursorIndex: sourceCursorIndex + 1
   readonly property int customCursorIndex: frequencyCursorIndex + 1
   readonly property int marketCursorIndex: customIntervalVisible ? customCursorIndex + 1 : customCursorIndex
@@ -77,13 +81,29 @@ Panel {
   }
 
   function cursorEnabled(index) {
-    return index !== previousCursorIndex || previousAvailable
+    if (index === previousCursorIndex) return previousAvailable
+    if (index === learnMoreCursorIndex) return learnMoreUrl !== ""
+    return true
   }
 
   function moveCursor(delta) {
     var next = cursorIndex + delta
     while (next > 0 && next < startupCursorIndex && !cursorEnabled(next)) next += delta
     cursorIndex = Math.max(0, Math.min(startupCursorIndex, next))
+  }
+
+  // Bing's attribution links point at a Bing search about the photo. Older
+  // archive responses used site-relative links.
+  function bingLink(value) {
+    var link = String(value || "")
+    if (/^\/[^\/]/.test(link)) link = "https://www.bing.com" + link
+    return /^https:\/\/([a-z0-9-]+\.)*bing\.com\//i.test(link) ? link : ""
+  }
+
+  function openLearnMore() {
+    if (learnMoreUrl === "") return
+    Qt.openUrlExternally(learnMoreUrl)
+    close()
   }
 
   function restorePrevious() {
@@ -120,6 +140,7 @@ Panel {
   function activateCursor() {
     if (cursorIndex === 0 && wallpaperService && !busy) wallpaperService.startRefresh("panel")
     else if (cursorIndex === previousCursorIndex) restorePrevious()
+    else if (cursorIndex === learnMoreCursorIndex) openLearnMore()
     else if (cursorIndex === sourceCursorIndex) providerDropdown.toggle()
     else if (cursorIndex === frequencyCursorIndex) frequencyDropdown.toggle()
     else if (customIntervalVisible && cursorIndex === customCursorIndex)
@@ -309,7 +330,7 @@ Panel {
 
           Button {
             id: changeButton
-            width: parent.width - previousButton.width - parent.spacing
+            width: parent.width - previousButton.width - learnMoreButton.width - parent.spacing * 2
             text: root.busy ? "Changing wallpaper..." : "Change now"
             iconText: "󰑐"
             iconSpinning: root.busy
@@ -335,6 +356,20 @@ Panel {
             hasCursor: root.cursorIndex === root.previousCursorIndex
             onHovered: function(hovered) { if (hovered) root.cursorIndex = root.previousCursorIndex }
             onClicked: root.restorePrevious()
+          }
+
+          PanelActionButton {
+            id: learnMoreButton
+            size: changeButton.height
+            iconText: "󰋽"
+            tooltipText: "Learn about this image"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            bordered: true
+            enabled: root.learnMoreUrl !== ""
+            hasCursor: root.cursorIndex === root.learnMoreCursorIndex
+            onHovered: function(hovered) { if (hovered) root.cursorIndex = root.learnMoreCursorIndex }
+            onClicked: root.openLearnMore()
           }
         }
 
