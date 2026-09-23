@@ -39,6 +39,12 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
 }
 
+# Prints the JSON on stdin if it is exactly one document satisfying the jq
+# condition $1. Fails for anything else, including concatenated documents.
+one_json() {
+  jq -cs "if length == 1 and (.[0] | $1) then .[0] else error(\"unexpected JSON\") end"
+}
+
 write_json() {
   local target="$1"
   local payload="$2"
@@ -221,46 +227,60 @@ if ! wait_for_network; then
 fi
 
 encoded_market=$(jq -rn --arg value "$MARKET" '$value | @uri')
-api_url="https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=${encoded_market}"
 
-archive=$(curl \
-  --fail \
-  --silent \
-  --show-error \
-  --location \
-  --proto '=https' \
-  --proto-redir '=https' \
-  --max-redirs 3 \
-  --max-filesize "$ARCHIVE_MAX_BYTES" \
-  --retry 2 \
-  --retry-delay 1 \
-  --connect-timeout 10 \
-  --max-time 45 \
-  --user-agent "omarchy-fresh-wallpaper/${VERSION}" \
-  "$api_url") || fail "could not fetch the Bing image archive"
+fetch_archive() {
+  curl \
+    --fail \
+    --silent \
+    --show-error \
+    --location \
+    --proto '=https' \
+    --proto-redir '=https' \
+    --max-redirs 3 \
+    --max-filesize "$ARCHIVE_MAX_BYTES" \
+    --retry 2 \
+    --retry-delay 1 \
+    --connect-timeout 10 \
+    --max-time 45 \
+    --user-agent "omarchy-fresh-wallpaper/${VERSION}" \
+    "https://www.bing.com/HPImageArchive.aspx?format=js&idx=$1&n=8&mkt=${encoded_market}"
+}
 
-jq -e '(.images | type) == "array" and (.images | length) > 0' >/dev/null <<<"$archive" \
-  || fail "Bing returned an invalid image archive"
+archive_page() {
+  one_json 'type == "object" and (.images | type) == "array" and (.images | length) > 0' <<<"$1"
+}
+
+archive=$(fetch_archive 0) || fail "could not fetch the Bing image archive"
+archive=$(archive_page "$archive" 2>/dev/null) || fail "Bing returned an invalid image archive"
+
+# Bing serves eight images per request. A second page starting seven days back
+# extends the pool to about two weeks; the newest page alone is enough if it fails.
+if older_archive=$(fetch_archive 7 2>/dev/null) && older_archive=$(archive_page "$older_archive" 2>/dev/null); then
+  archive=$(printf '%s\n%s\n' "$archive" "$older_archive" | jq -cs '{images: (map(.images) | add)}')
+fi
 
 all_candidates=$(jq -c '
+  def text: if type == "string" then . else "" end;
   [.images[]
+    | select(type == "object")
     | select(.wp == null or .wp == true)
-    | select((.urlbase | type) == "string" and (.urlbase | test("^/th\\?id=OHR\\.")))
+    | select((.urlbase | type) == "string" and (.urlbase | test("^/th\\?id=OHR\\.[A-Za-z0-9_.-]{1,120}$")))
     | {
-        startDate: (.startdate // ""),
+        startDate: (.startdate | text),
         urlbase: .urlbase,
-        title: (.title // ""),
-        copyright: (.copyright // ""),
-        copyrightLink: (.copyrightlink // "")
+        title: (.title | text),
+        copyright: (.copyright | text),
+        copyrightLink: (.copyrightlink | text)
       }
-  ]
+  ] | unique_by(.urlbase)
 ' <<<"$archive")
 
 (( $(jq 'length' <<<"$all_candidates") > 0 )) || fail "Bing returned no downloadable wallpapers"
 
 history='[]'
-if [[ -s $HISTORY_FILE ]] && jq -e 'type == "array" and all(.[]; type == "string")' "$HISTORY_FILE" >/dev/null 2>&1; then
-  history=$(jq -c . "$HISTORY_FILE")
+if [[ -s $HISTORY_FILE ]]; then
+  history=$(one_json 'type == "array" and all(.[]; type == "string")' <"$HISTORY_FILE" 2>/dev/null) \
+    || history='[]'
 fi
 
 current_urlbase=""
@@ -357,7 +377,7 @@ if (( APPLY )); then
   write_json "$CURRENT_FILE" "$result"
 
   next_history=$(jq -cn --arg selected "$urlbase" --argjson previous "$history" '
-    ([$selected] + [$previous[] | select(. != $selected)])[:8]
+    ([$selected] + [$previous[] | select(. != $selected)])[:16]
   ')
   write_json "$HISTORY_FILE" "$next_history"
   prune_cache "$image_path"

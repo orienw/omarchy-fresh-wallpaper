@@ -1,0 +1,17 @@
+{
+  "images": [
+    "not an image",
+    3,
+    null,
+    {"urlbase": 5},
+    {"urlbase": "/th?id=OHR.Bad Name/../x"},
+    {
+      "startdate": 20260801,
+      "urlbase": "/th?id=OHR.TypedWallpaper_EN-US0000000010",
+      "title": {"text": "not a string"},
+      "copyright": null,
+      "copyrightlink": 7,
+      "wp": true
+    }
+  ]
+}

@@ -15,7 +15,7 @@ Its small bar control opens a native configuration panel. Fresh Wallpaper runs i
 - Applies a change that came due during sleep within a minute of waking.
 - Does not force another change when the Omarchy shell or plugin reloads.
 - Recovers a missing cached wallpaper on startup, while preserving an available background selected outside the plugin.
-- Chooses an image not used yet from Bing's current eight-day archive.
+- Chooses an image not used yet from Bing's archive of about the last two weeks.
 - Prefers the 3840x2160 image and falls back to 1920x1080 when UHD is unavailable.
 - Retries UHD on later selections when only a 1080p copy is cached.
 - Starts a new random pass after all available images have been used, without immediately repeating the current image.

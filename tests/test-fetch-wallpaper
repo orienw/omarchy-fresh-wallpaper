@@ -15,8 +15,8 @@ use_case() {
   export XDG_CACHE_HOME="$TEST_TMP/$name/cache"
   export XDG_STATE_HOME="$TEST_TMP/$name/state"
   export TEST_APPLY_LOG="$TEST_TMP/$name/applied.log"
-  unset TEST_BING_FIXTURE TEST_FAIL_UHD TEST_IMAGE_URL_LOG TEST_IMAGE_FIXTURE TEST_OFFLINE \
-    TEST_OVERSIZE_IMAGE
+  unset TEST_BING_FIXTURE TEST_BING_OLDER_FIXTURE TEST_FAIL_OLDER_ARCHIVE TEST_FAIL_UHD \
+    TEST_IMAGE_URL_LOG TEST_IMAGE_FIXTURE TEST_OFFLINE TEST_OVERSIZE_IMAGE
   mkdir -p "$(dirname "$TEST_APPLY_LOG")"
   : >"$TEST_APPLY_LOG"
 }
@@ -85,6 +85,54 @@ for pass in 1 2 3; do
     exit 1
   fi
 done
+
+use_case malformed-archive
+export TEST_BING_OLDER_FIXTURE=bing-malformed.json
+typed=""
+for pick in 1 2 3 4; do
+  result=$(PATH="$TEST_TMP/full-passes/bin:$PATH" fetch)
+  [[ $(jq -r '.urlbase' <<<"$result") != *TypedWallpaper* ]] || typed=$result
+done
+[[ -n $typed ]]
+jq -e '.title == "" and .copyright == "" and .copyrightLink == "" and (.startDate | test("^[0-9]{8}$"))' \
+  >/dev/null <<<"$typed"
+[[ $(jq 'length' "$XDG_STATE_HOME/omarchy/fresh-wallpaper/history.json") -eq 4 ]]
+
+use_case concatenated-json
+concatenated="$TEST_TMP/concatenated-json/older.json"
+printf '{"images":{}}\n' >"$concatenated"
+cat -- "$TEST_FIXTURE_DIR/bing-older.json" >>"$concatenated"
+export TEST_BING_OLDER_FIXTURE=$concatenated
+for pick in 1 2 3; do
+  result=$(fetch)
+  jq -e '.urlbase | test("OlderWallpaper") | not' >/dev/null <<<"$result"
+done
+printf '["/th?id=OHR.FirstWallpaper_EN-US0000000001"]\n["/th?id=OHR.Unrelated"]\n' \
+  >"$XDG_STATE_HOME/omarchy/fresh-wallpaper/history.json"
+fetch >/dev/null
+jq -se 'length == 1 and (.[0] | length) == 1' "$XDG_STATE_HOME/omarchy/fresh-wallpaper/history.json" >/dev/null
+export TEST_BING_FIXTURE=$concatenated
+if fetch >/dev/null 2>&1; then
+  printf 'a concatenated newest archive page was accepted\n' >&2
+  exit 1
+fi
+
+use_case older-archive
+export TEST_BING_OLDER_FIXTURE=bing-older.json
+seen=()
+for pick in 1 2 3 4 5 6 7 8 9; do
+  result=$(PATH="$TEST_TMP/full-passes/bin:$PATH" fetch)
+  seen+=("$(jq -r '.urlbase' <<<"$result")")
+done
+if [[ $(printf '%s\n' "${seen[@]}" | sort -u | wc -l) -ne 9 ]]; then
+  printf 'the older archive page did not extend the shuffle pass\n' >&2
+  exit 1
+fi
+[[ $(jq 'length' "$XDG_STATE_HOME/omarchy/fresh-wallpaper/history.json") -eq 9 ]]
+
+export TEST_FAIL_OLDER_ARCHIVE=1
+newest_only=$(fetch --no-apply)
+jq -e '.urlbase | test("OlderWallpaper") | not' >/dev/null <<<"$newest_only"
 
 use_case fallback
 export TEST_BING_FIXTURE=bing-single.json

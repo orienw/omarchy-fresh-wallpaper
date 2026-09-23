@@ -78,6 +78,12 @@ fi
 if [[ $url == *HPImageArchive.aspx* ]]; then
   [[ $proto == "=https" && $proto_redir == "=https" && $max_redirs == 3 \
     && $max_filesize == 2097152 ]] || exit 2
+  if [[ $url == *"&idx=7&"* ]]; then
+    [[ ${TEST_FAIL_OLDER_ARCHIVE:-0} != 1 ]] || exit 22
+    command cat "$TEST_FIXTURE_DIR/${TEST_BING_OLDER_FIXTURE:-${TEST_BING_FIXTURE:-bing.json}}"
+    exit 0
+  fi
+  [[ $url == *"&idx=0&"* ]] || exit 2
   command cat "$TEST_FIXTURE_DIR/${TEST_BING_FIXTURE:-bing.json}"
   exit 0
 fi
