@@ -249,6 +249,20 @@ ShellRoot {
         return
       }
       service.retryAfterMs = 0
+      service.recentCount = 1
+      if (service.previousAvailable || service.startPrevious().indexOf("error:") !== 0) {
+        root.fail("Previous started without an earlier wallpaper")
+        return
+      }
+      service.lastTrigger = "previous"
+      service.failureNotified = false
+      service.processExited(1)
+      if (service.lastError === "" || service.retryAfterMs !== 0 || service.failureNotified) {
+        root.fail("a failed Previous queued a retry or notification")
+        return
+      }
+      service.lastError = ""
+      service.recentCount = 0
       service.lastTrigger = ""
       service.armSchedule()
 

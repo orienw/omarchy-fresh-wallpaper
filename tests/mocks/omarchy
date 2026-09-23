@@ -3,4 +3,8 @@
 set -euo pipefail
 
 [[ $1 == "theme" && $2 == "bg" && $3 == "set" && -n ${4:-} ]]
+if [[ -n ${TEST_APPLY_STARTED:-} ]]; then
+  : >"$TEST_APPLY_STARTED"
+  sleep "${TEST_APPLY_DELAY:-0}"
+fi
 printf '%s\n' "$4" >>"$TEST_APPLY_LOG"

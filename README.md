@@ -19,7 +19,7 @@ Its small bar control opens a native configuration panel. Fresh Wallpaper runs i
 - Prefers the 3840x2160 image and falls back to 1920x1080 when UHD is unavailable.
 - Retries UHD on later selections when only a 1080p copy is cached.
 - Starts a new random pass after all available images have been used, without immediately repeating the current image.
-- Keeps the active wallpaper and caps the download cache at 30 images by default.
+- Keeps the active wallpaper and the Previous history, and caps the download cache at 30 images by default.
 - Waits for the network after login instead of treating a connecting link as a wallpaper failure.
 - Retries quietly while offline, then shows at most one notification for a real download failure until an update succeeds.
 
@@ -36,6 +36,7 @@ Other providers can be added behind the existing `provider` setting without chan
 - `jq`
 - `djpeg` (from `libjpeg-turbo`)
 - GNU core utilities
+- `flock` (from `util-linux`)
 
 These commands are included in a normal Omarchy installation. No sudo or pkexec is required.
 
@@ -58,7 +59,7 @@ Daily means 24 hours after the last successful wallpaper change, Weekly means 7 
 
 Selecting Manual cancels pending retries from scheduled rotations. First-run and Change on start updates can still retry while offline.
 
-Press **Change now** in the panel or middle-click the bar icon to apply another wallpaper immediately.
+Press **Change now** in the panel or middle-click the bar icon to apply another wallpaper immediately. The undo button next to it restores the wallpaper shown before, and pressing it again keeps going back through the last few changes.
 
 A theme switch or another tool can replace the background between changes. The panel then shows that background instead of the last Bing image, and the next scheduled change or **Change now** brings Fresh Wallpaper back.
 
@@ -66,6 +67,7 @@ The shell commands remain available for shortcuts and automation:
 
 ```sh
 omarchy-shell fresh-wallpaper refresh
+omarchy-shell fresh-wallpaper previous
 ```
 
 Inspect the schedule, last result, image path, and Bing attribution:

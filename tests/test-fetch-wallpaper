@@ -68,7 +68,14 @@ only_again=$(fetch)
 
 use_case full-passes
 mkdir -p "$TEST_TMP/full-passes/bin"
-printf '#!/bin/sh\nprintf "0\\n"\n' >"$TEST_TMP/full-passes/bin/shuf"
+cat >"$TEST_TMP/full-passes/bin/shuf" <<'SHUF'
+#!/bin/sh
+# Deterministic stand-in for `shuf -i 0-N -n 1`: TEST_SHUF_INDEX, capped at N.
+max=${2#0-}
+index=${TEST_SHUF_INDEX:-0}
+[ "$index" -le "$max" ] || index=$max
+printf '%s\n' "$index"
+SHUF
 chmod +x "$TEST_TMP/full-passes/bin/shuf"
 previous=""
 for pass in 1 2 3; do
@@ -133,6 +140,207 @@ fi
 export TEST_FAIL_OLDER_ARCHIVE=1
 newest_only=$(fetch --no-apply)
 jq -e '.urlbase | test("OlderWallpaper") | not' >/dev/null <<<"$newest_only"
+
+use_case previous
+export TEST_BING_OLDER_FIXTURE=bing-older.json
+if fetch --previous >/dev/null 2>&1; then
+  printf 'previous without an earlier wallpaper unexpectedly succeeded\n' >&2
+  exit 1
+fi
+if fetch --previous --no-apply >/dev/null 2>&1; then
+  printf 'previous without applying unexpectedly succeeded\n' >&2
+  exit 1
+fi
+picks=()
+for pick in 1 2 3; do
+  picks+=("$(PATH="$TEST_TMP/full-passes/bin:$PATH" fetch | jq -r '.path')")
+done
+back=$(fetch --previous)
+[[ $(jq -r '.path' <<<"$back") == "${picks[1]}" ]]
+jq -e '.applied == true and (.title | length) > 0' >/dev/null <<<"$back"
+[[ $(tail -n 1 "$TEST_APPLY_LOG") == "${picks[1]}" ]]
+[[ $(jq -r '.path' "$XDG_STATE_HOME/omarchy/fresh-wallpaper/current.json") == "${picks[1]}" ]]
+[[ $(fetch --previous | jq -r '.path') == "${picks[0]}" ]]
+if fetch --previous >/dev/null 2>&1; then
+  printf 'previous went past the oldest wallpaper\n' >&2
+  exit 1
+fi
+[[ $(wc -l <"$TEST_APPLY_LOG") -eq 5 ]]
+
+for pick in 1 2; do
+  picks+=("$(PATH="$TEST_TMP/full-passes/bin:$PATH" fetch | jq -r '.path')")
+done
+rm -f -- "${picks[3]}"
+[[ $(fetch --previous | jq -r '.path') == "${picks[0]}" ]]
+
+use_case previous-no-repeat
+for pick in 1 2 3 4; do
+  PATH="$TEST_TMP/full-passes/bin:$PATH" fetch >/dev/null
+done
+restored=$(fetch --previous | jq -r '.urlbase')
+after_restore=$(TEST_SHUF_INDEX=1 PATH="$TEST_TMP/full-passes/bin:$PATH" fetch | jq -r '.urlbase')
+if [[ $after_restore == "$restored" ]]; then
+  printf 'the next change repeated the wallpaper Previous restored\n' >&2
+  exit 1
+fi
+
+use_case previous-chronology
+sequence=()
+for index in 0 0 0 1; do
+  sequence+=("$(TEST_SHUF_INDEX=$index PATH="$TEST_TMP/full-passes/bin:$PATH" fetch | jq -r '.path')")
+done
+[[ ${sequence[3]} == "${sequence[1]}" ]]
+for expected in 2 1 0; do
+  restored=$(fetch --previous | jq -r '.path')
+  if [[ $restored != "${sequence[$expected]}" ]]; then
+    printf 'Previous skipped a wallpaper in the chronological history\n' >&2
+    exit 1
+  fi
+done
+if fetch --previous >/dev/null 2>&1; then
+  printf 'previous went past the first wallpaper\n' >&2
+  exit 1
+fi
+
+use_case concurrent
+picks=()
+for pick in 1 2; do
+  picks+=("$(PATH="$TEST_TMP/full-passes/bin:$PATH" fetch | jq -r '.path')")
+done
+applying="$TEST_TMP/concurrent/applying"
+TEST_APPLY_STARTED="$applying" TEST_APPLY_DELAY=1 fetch >/dev/null &
+background=$!
+for attempt in {1..50}; do
+  [[ ! -e $applying ]] || break
+  sleep 0.1
+done
+[[ -e $applying ]]
+concurrent_previous=$(fetch --previous | jq -r '.path')
+wait "$background"
+if [[ $concurrent_previous != "${picks[1]}" ]]; then
+  printf 'Previous ran alongside another update instead of waiting for it\n' >&2
+  exit 1
+fi
+jq -e --arg newer "${picks[1]}" --arg older "${picks[0]}" '[.[].path] == [$newer, $older]' \
+  "$XDG_STATE_HOME/omarchy/fresh-wallpaper/recent.json" >/dev/null
+
+use_case prune-history
+export TEST_BING_OLDER_FIXTURE=bing-older.json
+picks=()
+for pick in 1 2 3 4 5 6 7 8; do
+  picks+=("$(PATH="$TEST_TMP/full-passes/bin:$PATH" fetch --cache-limit 8 | jq -r '.path')")
+done
+for step in 1 2 3 4 5 6; do
+  fetch --previous >/dev/null
+done
+PATH="$TEST_TMP/full-passes/bin:$PATH" fetch --cache-limit 8 >/dev/null
+[[ $(find "$XDG_CACHE_HOME/omarchy/fresh-wallpaper" -maxdepth 1 -name 'bing-*.jpg' | wc -l) -eq 8 ]]
+for expected in 1 0; do
+  if [[ $(fetch --previous | jq -r '.path') != "${picks[$expected]}" ]]; then
+    printf 'cache pruning deleted a wallpaper still in the Previous history\n' >&2
+    exit 1
+  fi
+done
+
+use_case interrupted-save
+# Fails the second state-file rename of a run, interrupting between two saves.
+mkdir -p "$TEST_TMP/interrupted-save/bin"
+cat >"$TEST_TMP/interrupted-save/bin/mv" <<MV
+#!/bin/sh
+case "\$3" in
+  */omarchy/fresh-wallpaper/*.json)
+    count=\$(( \$(cat "\$TEST_MV_COUNT" 2>/dev/null || echo 0) + 1 ))
+    echo "\$count" >"\$TEST_MV_COUNT"
+    [ "\$count" -ne 2 ] || exit 1
+    ;;
+esac
+exec $(command -v mv) "\$@"
+MV
+chmod +x "$TEST_TMP/interrupted-save/bin/mv"
+interrupted() {
+  rm -f -- "$TEST_TMP/interrupted-save/mv-count"
+  ! TEST_MV_COUNT="$TEST_TMP/interrupted-save/mv-count" \
+    PATH="$TEST_TMP/interrupted-save/bin:$TEST_TMP/full-passes/bin:$PATH" fetch "$@" >/dev/null 2>&1
+}
+
+picks=()
+for pick in 1 2 3; do
+  picks+=("$(PATH="$TEST_TMP/full-passes/bin:$PATH" fetch | jq -r '.path')")
+done
+interrupted --previous
+if [[ $(fetch --previous | jq -r '.path') != "${picks[0]}" ]]; then
+  printf 'Previous lost its place after an interrupted Previous\n' >&2
+  exit 1
+fi
+
+rm -rf -- "$XDG_STATE_HOME"
+picks=()
+for pick in 1 2 3; do
+  picks+=("$(PATH="$TEST_TMP/full-passes/bin:$PATH" fetch | jq -r '.path')")
+done
+interrupted
+if [[ $(fetch --previous | jq -r '.path') != "${picks[2]}" ]]; then
+  printf 'Previous lost its place after an interrupted change\n' >&2
+  exit 1
+fi
+
+rm -rf -- "$XDG_STATE_HOME"
+for pick in 1 2 3; do
+  PATH="$TEST_TMP/full-passes/bin:$PATH" fetch >/dev/null
+done
+interrupted
+displayed=$(tail -n 1 "$TEST_APPLY_LOG")
+if [[ $(PATH="$TEST_TMP/full-passes/bin:$PATH" fetch | jq -r '.path') == "$displayed" ]]; then
+  printf 'the change after an interrupted save repeated the wallpaper on screen\n' >&2
+  exit 1
+fi
+
+use_case staged-save
+mkdir -p "$TEST_TMP/staged-save/bin"
+cat >"$TEST_TMP/staged-save/bin/mktemp" <<MKTEMP
+#!/bin/sh
+case "\$1" in
+  *recent.json.tmp.*) exit 1 ;;
+esac
+exec $(command -v mktemp) "\$@"
+MKTEMP
+chmod +x "$TEST_TMP/staged-save/bin/mktemp"
+fetch >/dev/null
+saved_current=$(cat "$XDG_STATE_HOME/omarchy/fresh-wallpaper/current.json")
+if PATH="$TEST_TMP/staged-save/bin:$PATH" fetch >/dev/null 2>&1; then
+  printf 'an update that could not save its state unexpectedly succeeded\n' >&2
+  exit 1
+fi
+if [[ $(wc -l <"$TEST_APPLY_LOG") -ne 1 \
+    || $(cat "$XDG_STATE_HOME/omarchy/fresh-wallpaper/current.json") != "$saved_current" ]]; then
+  printf 'a failed state save still changed the desktop or current wallpaper\n' >&2
+  exit 1
+fi
+[[ -z $(find "$XDG_STATE_HOME/omarchy/fresh-wallpaper" -name '*.tmp.*') ]]
+
+use_case long-metadata
+long_fixture="$TEST_TMP/long-metadata/bing.json"
+head -c 150000 /dev/zero | tr '\0' x \
+  | jq -Rs --slurpfile base "$TEST_FIXTURE_DIR/bing.json" \
+    '. as $long | $base[0] | .images |= map(.title = $long | .copyright = $long)' >"$long_fixture"
+export TEST_BING_FIXTURE=$long_fixture
+long_first=$(fetch)
+jq -e '(.title | length) == 150000 and (.copyright | length) == 150000' >/dev/null <<<"$long_first"
+fetch >/dev/null
+[[ $(jq 'length' "$XDG_STATE_HOME/omarchy/fresh-wallpaper/recent.json") -eq 2 ]]
+[[ $(fetch --previous | jq -r '.path') == "$(jq -r '.path' <<<"$long_first")" ]]
+[[ $(jq 'length' "$XDG_STATE_HOME/omarchy/fresh-wallpaper/recent.json") -eq 1 ]]
+
+use_case previous-upgrade
+upgrade_state="$XDG_STATE_HOME/omarchy/fresh-wallpaper"
+upgrade_path="$XDG_CACHE_HOME/omarchy/fresh-wallpaper/bing-20260801-Upgraded_EN-US0000000000-UHD.jpg"
+mkdir -p "$upgrade_state" "$(dirname "$upgrade_path")"
+cp -- "$TEST_FIXTURE_DIR/wallpaper.jpg" "$upgrade_path"
+jq -cn --arg path "$upgrade_path" '{path: $path, title: "Upgraded", urlbase: "/th?id=OHR.Upgraded"}' \
+  >"$upgrade_state/current.json"
+fetch >/dev/null
+restored=$(fetch --previous)
+jq -e --arg path "$upgrade_path" '.path == $path and .title == "Upgraded"' >/dev/null <<<"$restored"
 
 use_case fallback
 export TEST_BING_FIXTURE=bing-single.json

@@ -6,6 +6,7 @@ PROVIDER="bing"
 MARKET="en-US"
 CACHE_LIMIT=30
 APPLY=1
+PREVIOUS=0
 VERSION="0.1.4"
 NETWORK_WAIT_SECONDS=60
 ARCHIVE_MAX_BYTES=2097152
@@ -21,6 +22,7 @@ Options:
   --cache-limit <count>          Number of downloaded images to retain (default: 30)
   --network-wait-seconds <secs>  Wait for HTTPS connectivity before downloading (default: 60)
   --no-apply                     Download and report a wallpaper without applying it
+  --previous                     Restore the wallpaper applied before the current one
   -h, --help                     Show this help
 USAGE
 }
@@ -45,15 +47,48 @@ one_json() {
   jq -cs "if length == 1 and (.[0] | $1) then .[0] else error(\"unexpected JSON\") end"
 }
 
-write_json() {
-  local target="$1"
-  local payload="$2"
+staged_files=()
+staged_targets=()
+
+# Writes a state file beside its target without replacing it yet, so a full
+# disk fails before the desktop changes. commit_state renames them into place in
+# the order they were staged.
+stage_state() {
   local temporary
 
-  temporary=$(mktemp "${target}.tmp.XXXXXX")
-  printf '%s\n' "$payload" >"$temporary"
-  mv -- "$temporary" "$target"
+  temporary=$(mktemp "$1.tmp.XXXXXX")
+  staged_files+=("$temporary")
+  staged_targets+=("$1")
+  printf '%s\n' "$2" >"$temporary"
 }
+
+commit_state() {
+  local i
+
+  for i in "${!staged_files[@]}"; do
+    mv -- "${staged_files[$i]}" "${staged_targets[$i]}"
+  done
+  staged_files=()
+  staged_targets=()
+}
+
+cleanup() {
+  [[ -z ${partial:-} ]] || rm -f -- "$partial"
+  (( ${#staged_files[@]} == 0 )) || rm -f -- "${staged_files[@]}"
+}
+trap cleanup EXIT
+
+# Feeds JSON values to a jq filter through stdin, which has no size limit, unlike
+# command-line arguments. The filter reads them in order with `input`.
+jq_inputs() {
+  local filter=$1
+  shift
+  printf '%s\n' "$@" | jq -cn "$filter"
+}
+
+# Collapses consecutive entries for the same file in the newest-first list of
+# applied wallpapers, so each Previous step changes the desktop.
+RECENT_COLLAPSE='reduce .[] as $entry ([]; if length > 0 and .[-1].path == $entry.path then . else . + [$entry] end)'
 
 valid_jpeg() {
   [[ -s $1 ]] && djpeg -strict -outfile /dev/null "$1" 2>/dev/null
@@ -135,17 +170,17 @@ wait_for_network() {
   done
 }
 
+# Keeps every file passed in, which covers the current wallpaper and the
+# Previous history, then the newest other downloads up to the cache limit.
 prune_cache() {
-  local protected_path="$1"
+  local -a protected=("$@")
   local -a entries=()
+  local -a others=()
   local entry
   local path
+  local candidate
+  local is_protected
   local keep_count=$CACHE_LIMIT
-  local kept=0
-
-  if [[ -f $protected_path ]]; then
-    keep_count=$((CACHE_LIMIT - 1))
-  fi
 
   mapfile -d '' -t entries < <(
     find "$CACHE_DIR" -maxdepth 1 -type f -name 'bing-*.jpg' -printf '%T@\t%p\0' | sort -z -nr
@@ -153,14 +188,20 @@ prune_cache() {
 
   for entry in "${entries[@]}"; do
     path=${entry#*$'\t'}
-    if [[ $path == "$protected_path" ]]; then
-      continue
-    fi
-    if (( kept < keep_count )); then
-      ((kept += 1))
+    is_protected=0
+    for candidate in "${protected[@]}"; do
+      [[ $candidate != "$path" ]] || is_protected=1
+    done
+    if (( is_protected )); then
+      keep_count=$((keep_count - 1))
     else
-      rm -f -- "$path"
+      others+=("$path")
     fi
+  done
+
+  (( keep_count >= 0 )) || keep_count=0
+  for path in "${others[@]:keep_count}"; do
+    rm -f -- "$path"
   done
 }
 
@@ -190,6 +231,10 @@ while (( $# > 0 )); do
       APPLY=0
       shift
       ;;
+    --previous)
+      PREVIOUS=1
+      shift
+      ;;
     -h | --help)
       usage
       exit 0
@@ -206,11 +251,13 @@ done
 (( CACHE_LIMIT >= 8 && CACHE_LIMIT <= 100 )) || fail "cache limit must be between 8 and 100"
 [[ $NETWORK_WAIT_SECONDS =~ ^[0-9]+$ ]] || fail "network wait must be an integer"
 (( NETWORK_WAIT_SECONDS <= 3600 )) || fail "network wait must be 0-3600 seconds"
+(( !PREVIOUS || APPLY )) || fail "--previous cannot be combined with --no-apply"
 
 require_command curl
 require_command djpeg
 require_command jq
 require_command shuf
+require_command flock
 if (( APPLY )); then require_command omarchy; fi
 
 CACHE_HOME=${XDG_CACHE_HOME:-"$HOME/.cache"}
@@ -219,8 +266,55 @@ CACHE_DIR="$CACHE_HOME/omarchy/fresh-wallpaper"
 STATE_DIR="$STATE_HOME/omarchy/fresh-wallpaper"
 CURRENT_FILE="$STATE_DIR/current.json"
 HISTORY_FILE="$STATE_DIR/history.json"
+RECENT_FILE="$STATE_DIR/recent.json"
 
 mkdir -p -- "$CACHE_DIR" "$STATE_DIR"
+
+# Serialize helpers so concurrent runs cannot overwrite each other's state.
+exec 9>"$STATE_DIR/.lock"
+flock -w 300 9 || fail "another wallpaper update is still running"
+
+current='null'
+if [[ -s $CURRENT_FILE ]]; then
+  current=$(one_json 'type == "object"' <"$CURRENT_FILE" 2>/dev/null) || current='null'
+fi
+
+# Applied wallpapers, newest first. This list is the record Previous trusts, and
+# it is always saved before current.json. The current wallpaper only seeds it for
+# state from earlier versions, which kept current.json alone.
+if [[ -s $RECENT_FILE ]] && recent_file=$(one_json 'type == "array"' <"$RECENT_FILE" 2>/dev/null); then
+  recent=$(jq -c "[.[] | select(type == \"object\" and (.path | type) == \"string\")] | $RECENT_COLLAPSE" \
+    <<<"$recent_file")
+else
+  recent=$(jq -c 'if (.path | type) == "string" then [.] else [] end' <<<"$current")
+fi
+
+if (( PREVIOUS )); then
+  recent_count=$(jq 'length' <<<"$recent")
+  current_path=$(jq -r '.[0].path // ""' <<<"$recent")
+  restore_index=""
+  for ((i = 1; i < recent_count; i++)); do
+    candidate_path=$(jq -r --argjson i "$i" '.[$i].path' <<<"$recent")
+    if [[ $candidate_path != "$current_path" ]] && valid_jpeg "$candidate_path"; then
+      restore_index=$i
+      break
+    fi
+  done
+  [[ -n $restore_index ]] || fail "no previous wallpaper is available"
+
+  changed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  next_recent=$(jq -c --argjson i "$restore_index" --arg changedAt "$changed_at" \
+    "[.[\$i] + {changedAt: \$changedAt, applied: true}] + .[\$i + 1:] | $RECENT_COLLAPSE" <<<"$recent")
+  result=$(jq -c '.[0]' <<<"$next_recent")
+  image_path=$(jq -r '.path' <<<"$result")
+  stage_state "$RECENT_FILE" "$next_recent"
+  stage_state "$CURRENT_FILE" "$result"
+  omarchy theme bg set "$image_path" 9>&-
+  touch -- "$image_path"
+  commit_state
+  printf '%s\n' "$result"
+  exit 0
+fi
 
 if ! wait_for_network; then
   network_unavailable
@@ -283,22 +377,21 @@ if [[ -s $HISTORY_FILE ]]; then
     || history='[]'
 fi
 
-current_urlbase=""
-if [[ -s $CURRENT_FILE ]] && jq -e 'type == "object"' "$CURRENT_FILE" >/dev/null 2>&1; then
-  current_urlbase=$(jq -r '.urlbase // ""' "$CURRENT_FILE")
-fi
+current_urlbase=$(jq -c '.[0].urlbase // ""' <<<"$recent")
 
-candidates=$(jq -c --argjson seen "$history" '
-  [.[] | select(.urlbase as $candidate | ($seen | index($candidate) | not))]
-' <<<"$all_candidates")
-
-if (( $(jq 'length' <<<"$candidates") == 0 )); then
-  history='[]'
-  candidates=$(jq -c --arg current "$current_urlbase" '[.[] | select(.urlbase != $current)]' <<<"$all_candidates")
-fi
-if (( $(jq 'length' <<<"$candidates") == 0 )); then
-  candidates=$all_candidates
-fi
+# Never repeat the image on screen while others are available, including one
+# that Previous restored. Start a new pass once every other image has been used.
+selection=$(jq_inputs '
+  input as $all | input as $seen | input as $current
+  | [$all[] | select(.urlbase != $current)] as $others
+  | [$others[] | select(.urlbase as $candidate | $seen | index($candidate) | not)] as $unseen
+  | if ($unseen | length) > 0 then {history: $seen, candidates: $unseen}
+    elif ($others | length) > 0 then {history: [], candidates: $others}
+    else {history: [], candidates: $all}
+    end
+' "$all_candidates" "$history" "$current_urlbase")
+history=$(jq -c '.history' <<<"$selection")
+candidates=$(jq -c '.candidates' <<<"$selection")
 
 candidate_count=$(jq 'length' <<<"$candidates")
 candidate_index=$(shuf -i "0-$((candidate_count - 1))" -n 1)
@@ -306,9 +399,6 @@ selected=$(jq -c --argjson index "$candidate_index" '.[$index]' <<<"$candidates"
 
 start_date=$(jq -r '.startDate' <<<"$selected")
 urlbase=$(jq -r '.urlbase' <<<"$selected")
-title=$(jq -r '.title' <<<"$selected")
-copyright=$(jq -r '.copyright' <<<"$selected")
-copyright_link=$(jq -r '.copyrightLink' <<<"$selected")
 
 [[ $start_date =~ ^[0-9]{8}$ ]] || start_date=$(date -u +%Y%m%d)
 slug=${urlbase#*OHR.}
@@ -324,10 +414,6 @@ image_path="${image_base}-UHD.jpg"
 
 if ! valid_jpeg "$image_path"; then
   partial=$(mktemp "$CACHE_DIR/.download.XXXXXX")
-  cleanup() {
-    [[ -z ${partial:-} ]] || rm -f -- "$partial"
-  }
-  trap cleanup EXIT
 
   if download_image "$image_url" "$partial" 2>/dev/null && valid_jpeg "$partial"; then
     mv -- "$partial" "$image_path"
@@ -344,14 +430,10 @@ if ! valid_jpeg "$image_path"; then
 fi
 
 changed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-result=$(jq -cn \
+result=$(jq -c \
   --arg provider "$PROVIDER" \
   --arg market "$MARKET" \
   --arg startDate "$start_date" \
-  --arg urlbase "$urlbase" \
-  --arg title "$title" \
-  --arg copyright "$copyright" \
-  --arg copyrightLink "$copyright_link" \
   --arg imageUrl "$image_url" \
   --arg path "$image_path" \
   --arg changedAt "$changed_at" \
@@ -361,26 +443,36 @@ result=$(jq -cn \
       provider: $provider,
       market: $market,
       startDate: $startDate,
-      urlbase: $urlbase,
-      title: $title,
-      copyright: $copyright,
-      copyrightLink: $copyrightLink,
+      urlbase: .urlbase,
+      title: .title,
+      copyright: .copyright,
+      copyrightLink: .copyrightLink,
       imageUrl: $imageUrl,
       path: $path,
       changedAt: $changedAt,
       applied: ($applied == 1)
     }
-  ')
+  ' <<<"$selected")
 
 if (( APPLY )); then
-  omarchy theme bg set "$image_path"
-  write_json "$CURRENT_FILE" "$result"
+  # Build every state update before changing the desktop, so a failure leaves
+  # both the background and the saved state untouched.
+  next_recent=$(jq_inputs "input as \$result | input as \$recent
+    | [\$result] + \$recent | $RECENT_COLLAPSE | .[:8]" "$result" "$recent")
+  next_history=$(jq_inputs '
+    input as $result | input as $previous
+    | ([$result.urlbase] + [$previous[] | select(. != $result.urlbase)])[:16]
+  ' "$result" "$history")
 
-  next_history=$(jq -cn --arg selected "$urlbase" --argjson previous "$history" '
-    ([$selected] + [$previous[] | select(. != $selected)])[:16]
-  ')
-  write_json "$HISTORY_FILE" "$next_history"
-  prune_cache "$image_path"
+  stage_state "$RECENT_FILE" "$next_recent"
+  stage_state "$CURRENT_FILE" "$result"
+  stage_state "$HISTORY_FILE" "$next_history"
+  omarchy theme bg set "$image_path" 9>&-
+  touch -- "$image_path"
+  commit_state
+
+  mapfile -d '' -t protected_paths < <(jq -j '.[] | .path + "\u0000"' <<<"$next_recent")
+  prune_cache "${protected_paths[@]}"
 fi
 
 printf '%s\n' "$result"

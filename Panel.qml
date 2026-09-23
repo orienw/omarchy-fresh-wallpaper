@@ -32,6 +32,9 @@ Panel {
     : String(currentWallpaper.path || "")
   readonly property bool previewPlaceholderVisible: previewImage.status !== Image.Ready
   readonly property bool busy: wallpaperService ? wallpaperService.running : false
+  readonly property bool previousAvailable: wallpaperService
+    ? wallpaperService.previousAvailable === true
+    : false
   readonly property double nextChangeAtMs: wallpaperService ? Number(wallpaperService.nextChangeAtMs || 0) : 0
   readonly property bool retryPending: wallpaperService ? Number(wallpaperService.retryAfterMs || 0) > 0 : false
   readonly property string errorText: wallpaperService ? wallpaperService.lastError : ""
@@ -44,8 +47,12 @@ Panel {
   readonly property bool intervalIsPreset: [0, 1440, 10080, 43200]
     .indexOf(configuredInterval) !== -1
   readonly property bool customIntervalVisible: customIntervalRequested || !intervalIsPreset
-  readonly property int marketCursorIndex: customIntervalVisible ? 4 : 3
-  readonly property int startupCursorIndex: customIntervalVisible ? 5 : 4
+  readonly property int previousCursorIndex: 1
+  readonly property int sourceCursorIndex: 2
+  readonly property int frequencyCursorIndex: sourceCursorIndex + 1
+  readonly property int customCursorIndex: frequencyCursorIndex + 1
+  readonly property int marketCursorIndex: customIntervalVisible ? customCursorIndex + 1 : customCursorIndex
+  readonly property int startupCursorIndex: marketCursorIndex + 1
   readonly property var frequencyOptions: [
     { value: "0", label: "Manual only" },
     { value: "1440", label: "Daily" },
@@ -69,8 +76,18 @@ Panel {
     return false
   }
 
+  function cursorEnabled(index) {
+    return index !== previousCursorIndex || previousAvailable
+  }
+
   function moveCursor(delta) {
-    cursorIndex = Math.max(0, Math.min(startupCursorIndex, cursorIndex + delta))
+    var next = cursorIndex + delta
+    while (next > 0 && next < startupCursorIndex && !cursorEnabled(next)) next += delta
+    cursorIndex = Math.max(0, Math.min(startupCursorIndex, next))
+  }
+
+  function restorePrevious() {
+    if (wallpaperService && previousAvailable && !busy) wallpaperService.startPrevious()
   }
 
   function selectFrequency(value) {
@@ -102,9 +119,11 @@ Panel {
 
   function activateCursor() {
     if (cursorIndex === 0 && wallpaperService && !busy) wallpaperService.startRefresh("panel")
-    else if (cursorIndex === 1) providerDropdown.toggle()
-    else if (cursorIndex === 2) frequencyDropdown.toggle()
-    else if (customIntervalVisible && cursorIndex === 3) customIntervalField.field.forceActiveFocus()
+    else if (cursorIndex === previousCursorIndex) restorePrevious()
+    else if (cursorIndex === sourceCursorIndex) providerDropdown.toggle()
+    else if (cursorIndex === frequencyCursorIndex) frequencyDropdown.toggle()
+    else if (customIntervalVisible && cursorIndex === customCursorIndex)
+      customIntervalField.field.forceActiveFocus()
     else if (cursorIndex === marketCursorIndex) marketDropdown.toggle()
     else if (cursorIndex === startupCursorIndex && wallpaperService)
       wallpaperService.setRunOnStart(wallpaperService.runOnStart ? "false" : "true")
@@ -284,19 +303,39 @@ Panel {
           elide: Text.ElideRight
         }
 
-        Button {
+        Row {
           width: parent.width
-          text: root.busy ? "Changing wallpaper..." : "Change now"
-          iconText: "󰑐"
-          iconSpinning: root.busy
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          bordered: true
-          focusable: true
-          enabled: root.wallpaperService && !root.busy
-          hasCursor: root.cursorIndex === 0
-          onHovered: function(hovered) { if (hovered) root.cursorIndex = 0 }
-          onClicked: if (root.wallpaperService) root.wallpaperService.startRefresh("panel")
+          spacing: Style.space(8)
+
+          Button {
+            id: changeButton
+            width: parent.width - previousButton.width - parent.spacing
+            text: root.busy ? "Changing wallpaper..." : "Change now"
+            iconText: "󰑐"
+            iconSpinning: root.busy
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            bordered: true
+            focusable: true
+            enabled: root.wallpaperService && !root.busy
+            hasCursor: root.cursorIndex === 0
+            onHovered: function(hovered) { if (hovered) root.cursorIndex = 0 }
+            onClicked: if (root.wallpaperService) root.wallpaperService.startRefresh("panel")
+          }
+
+          PanelActionButton {
+            id: previousButton
+            size: changeButton.height
+            iconText: "󰕌"
+            tooltipText: "Previous wallpaper"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            bordered: true
+            enabled: root.previousAvailable && !root.busy
+            hasCursor: root.cursorIndex === root.previousCursorIndex
+            onHovered: function(hovered) { if (hovered) root.cursorIndex = root.previousCursorIndex }
+            onClicked: root.restorePrevious()
+          }
         }
 
         PanelSeparator {
@@ -319,8 +358,8 @@ Panel {
           ]
           foreground: root.foreground
           fontFamily: root.fontFamily
-          hasCursor: root.cursorIndex === 1
-          onHovered: function(hovered) { if (hovered) root.cursorIndex = 1 }
+          hasCursor: root.cursorIndex === root.sourceCursorIndex
+          onHovered: function(hovered) { if (hovered) root.cursorIndex = root.sourceCursorIndex }
           onChanged: function(value) {
             if (root.wallpaperService) root.wallpaperService.setProvider(value)
           }
@@ -334,8 +373,8 @@ Panel {
           options: root.frequencyOptions
           foreground: root.foreground
           fontFamily: root.fontFamily
-          hasCursor: root.cursorIndex === 2
-          onHovered: function(hovered) { if (hovered) root.cursorIndex = 2 }
+          hasCursor: root.cursorIndex === root.frequencyCursorIndex
+          onHovered: function(hovered) { if (hovered) root.cursorIndex = root.frequencyCursorIndex }
           onChanged: function(value) { root.selectFrequency(value) }
         }
 
@@ -352,8 +391,8 @@ Panel {
             : root.configuredInterval
           foreground: root.foreground
           fontFamily: root.fontFamily
-          hasCursor: root.customIntervalVisible && root.cursorIndex === 3
-          onHovered: function(hovered) { if (hovered) root.cursorIndex = 3 }
+          hasCursor: root.customIntervalVisible && root.cursorIndex === root.customCursorIndex
+          onHovered: function(hovered) { if (hovered) root.cursorIndex = root.customCursorIndex }
           onModified: function(value) {
             root.setCustomInterval(value)
           }

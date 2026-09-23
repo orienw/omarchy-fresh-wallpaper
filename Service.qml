@@ -16,6 +16,7 @@ Item {
   readonly property string home: Quickshell.env("HOME")
   readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || home + "/.local/state"
   readonly property string statePath: stateHome + "/omarchy/fresh-wallpaper/current.json"
+  readonly property string recentPath: stateHome + "/omarchy/fresh-wallpaper/recent.json"
   property string currentBackgroundLink: home + "/.local/state/omarchy/current/background"
   property string externalBackgroundPath: ""
 
@@ -60,6 +61,10 @@ Item {
   property string pendingStartupTrigger: ""
   property int deferCount: 0
   property bool loadingInitialState: false
+  // recent.json is the record the helper's Previous trusts, so availability
+  // follows it rather than current.json.
+  property int recentCount: 0
+  readonly property bool previousAvailable: recentCount > 1
   readonly property bool running: fetchProcess.running
   readonly property double nextChangeAtMs: scheduledAtMs()
   readonly property double scheduleChunkMs: 60000
@@ -230,18 +235,36 @@ Item {
     if (fetchProcess.running) return "already running"
 
     cancelPendingStartupTrigger()
-    lastTrigger = trigger
-    lastError = ""
-    fetchProcess.command = [
-      "bash",
-      sourceDir + "/scripts/fetch-wallpaper",
+    return runHelper(trigger, [
       "--provider", provider,
       "--market", market,
       "--cache-limit", String(cacheLimit),
       "--network-wait-seconds", String(networkWaitSeconds(trigger))
-    ]
+    ])
+  }
+
+  function startPrevious() {
+    if (!initialized || sourceDir === "") return "not ready"
+    if (fetchProcess.running) return "already running"
+    if (!previousAvailable) return "error: no previous wallpaper is available"
+    return runHelper("previous", ["--previous"])
+  }
+
+  function runHelper(trigger, args) {
+    lastTrigger = trigger
+    lastError = ""
+    fetchProcess.command = ["bash", sourceDir + "/scripts/fetch-wallpaper"].concat(args)
     fetchProcess.running = true
     return "started"
+  }
+
+  function loadRecent(raw) {
+    try {
+      var parsed = JSON.parse(String(raw || ""))
+      recentCount = Array.isArray(parsed) ? parsed.length : 0
+    } catch (error) {
+      recentCount = 0
+    }
   }
 
   function loadState(raw) {
@@ -276,6 +299,7 @@ Item {
       retryAfterMs = 0
       retryOrigin = ""
       stateFile.reload()
+      recentFile.reload()
       armSchedule()
     } catch (error) {
       processFailed("fetch helper returned invalid JSON")
@@ -302,10 +326,21 @@ Item {
     armSchedule()
   }
 
-  function processFailed(message) {
+  function processExited(exitCode) {
+    if (exitCode === 0) processSucceeded(fetchStdout.text)
+    else if (lastTrigger === "previous") lastError = errorDetail(fetchStderr.text)
+    else if (exitCode === 75 && !isUserTrigger(lastTrigger)) processDeferred()
+    else processFailed(fetchStderr.text || "Wallpaper update failed with exit code " + exitCode)
+  }
+
+  function errorDetail(message) {
     var detail = String(message || "Fresh Wallpaper could not update the background.")
       .replace(/\s+/g, " ").trim()
-    if (detail.length > 240) detail = detail.substring(0, 237) + "..."
+    return detail.length > 240 ? detail.substring(0, 237) + "..." : detail
+  }
+
+  function processFailed(message) {
+    var detail = errorDetail(message)
     lastError = detail
     consecutiveFailures++
     queueRetry(15 * 60000)
@@ -435,6 +470,16 @@ Item {
     onFileChanged: reload()
   }
 
+  FileView {
+    id: recentFile
+    path: root.recentPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.loadRecent(text())
+    onLoadFailed: root.recentCount = 0
+    onFileChanged: reload()
+  }
+
   Process {
     id: initialWallpaperCheck
     // qmllint disable signal-handler-parameters
@@ -483,9 +528,7 @@ Item {
 
     // qmllint disable signal-handler-parameters
     onExited: function(exitCode, exitStatus) {
-      if (exitCode === 0) root.processSucceeded(fetchStdout.text)
-      else if (exitCode === 75 && !root.isUserTrigger(root.lastTrigger)) root.processDeferred()
-      else root.processFailed(fetchStderr.text || "Wallpaper update failed with exit code " + exitCode)
+      root.processExited(exitCode)
     }
     // qmllint enable signal-handler-parameters
   }
@@ -501,6 +544,10 @@ Item {
 
     function refresh(): string {
       return root.startRefresh("manual")
+    }
+
+    function previous(): string {
+      return root.startPrevious()
     }
 
     function setProvider(value: string): string {

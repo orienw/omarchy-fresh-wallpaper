@@ -28,10 +28,13 @@ ShellRoot {
     property string externalBackgroundPath: ""
     property double nextChangeAtMs: 0
     property double retryAfterMs: 0
+    property bool previousAvailable: false
+    property int previousCalls: 0
     property int backgroundChecks: 0
 
     function startRefresh(trigger) { return trigger }
     function checkBackground() { backgroundChecks++ }
+    function startPrevious() { previousCalls++; return "started" }
     function setProvider(value) { provider = value; return value }
     function setIntervalMinutes(value) { intervalMinutes = Number(value); return String(value) }
     function setMarket(value) { market = value; return value }
@@ -164,7 +167,7 @@ ShellRoot {
       if (fakeService.intervalMinutes !== 60
           || !panel.customIntervalVisible
           || panel.customIntervalDraft !== 60
-          || panel.startupCursorIndex !== 5) {
+          || panel.startupCursorIndex !== 6) {
         root.fail("Custom frequency state was not applied")
         return
       }
@@ -192,6 +195,21 @@ ShellRoot {
         return
       }
 
+      panel.cursorIndex = 0
+      panel.moveCursor(1)
+      if (panel.cursorIndex !== panel.sourceCursorIndex) {
+        root.fail("the keyboard cursor stopped on an unavailable Previous button")
+        return
+      }
+      fakeService.previousAvailable = true
+      panel.cursorIndex = 0
+      panel.moveCursor(1)
+      panel.activateCursor()
+      if (panel.cursorIndex !== panel.previousCursorIndex || fakeService.previousCalls !== 1) {
+        root.fail("the Previous button did not restore the previous wallpaper")
+        return
+      }
+
       panel.cursorIndex = panel.startupCursorIndex
       if (panel.setCustomInterval("1440") !== "1440") {
         root.fail("panel settings did not reach the service")
@@ -208,8 +226,8 @@ ShellRoot {
     onTriggered: {
       var panel = panelLoader.item
       if (panel.customIntervalVisible
-          || panel.startupCursorIndex !== 4
-          || panel.cursorIndex !== 4) {
+          || panel.startupCursorIndex !== 5
+          || panel.cursorIndex !== 5) {
         root.fail("cursor was not clamped when the Custom row closed")
         return
       }
