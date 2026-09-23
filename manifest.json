@@ -5,7 +5,7 @@
   "version": "0.1.4",
   "author": "Orien",
   "license": "MIT",
-  "description": "Automatically refreshes your desktop with high-resolution wallpapers on a daily, weekly, monthly, or custom schedule.",
+  "description": "Rotates your wallpaper through Bing's daily UHD photos on a schedule you pick, with one-click changes right in the Omarchy bar.",
   "kinds": [
     "service",
     "bar-widget"
