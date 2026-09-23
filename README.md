@@ -4,7 +4,7 @@ Fresh Wallpaper is a wallpaper rotation plugin for Omarchy Quattro. It downloads
 
 Its small bar control opens a native configuration panel. Fresh Wallpaper runs inside `omarchy-shell`, with no standalone app or separate background process. The bar control is also the plugin's on-switch, so removing or disabling it stops wallpaper rotation.
 
-![Fresh Wallpaper settings panel](preview.png)
+![Fresh Wallpaper panel open from the Omarchy bar over a sample mountain lake wallpaper](preview.png)
 
 ## Default behavior
 
