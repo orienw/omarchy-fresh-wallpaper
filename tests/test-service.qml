@@ -123,9 +123,14 @@ ShellRoot {
         return
       }
 
+      if (service.nextChangeAtMs !== service.scheduledAtMs()) {
+        root.fail("the panel's next change time does not follow the schedule")
+        return
+      }
+
       service.lastTrigger = "first-run"
       service.processFailed("synthetic network failure")
-      var retryRemaining = service.scheduledAtMs() - Date.now()
+      var retryRemaining = service.nextChangeAtMs - Date.now()
       if (retryRemaining < 15 * 60000 - 2000 || retryRemaining > 15 * 60000
           || service.failureNotified || service.shouldNotifyFailure()) {
         root.fail("first-run retry behavior is incorrect: " + retryRemaining)

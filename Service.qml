@@ -61,6 +61,7 @@ Item {
   property int deferCount: 0
   property bool loadingInitialState: false
   readonly property bool running: fetchProcess.running
+  readonly property double nextChangeAtMs: scheduledAtMs()
   readonly property double scheduleChunkMs: 60000
 
   function setting(name, fallback) {

@@ -26,6 +26,8 @@ ShellRoot {
     property bool runOnStart: false
     property var settings: ({})
     property string externalBackgroundPath: ""
+    property double nextChangeAtMs: 0
+    property double retryAfterMs: 0
     property int backgroundChecks: 0
 
     function startRefresh(trigger) { return trigger }
@@ -164,6 +166,29 @@ ShellRoot {
           || panel.customIntervalDraft !== 60
           || panel.startupCursorIndex !== 5) {
         root.fail("Custom frequency state was not applied")
+        return
+      }
+
+      if (panel.nextChangeLabel() !== "") {
+        root.fail("an unscheduled service showed a next change time")
+        return
+      }
+      panel.nowMs = Date.now()
+      fakeService.nextChangeAtMs = panel.nowMs + 14 * 3600000
+      if (panel.nextChangeLabel() !== "Next change in 14h") {
+        root.fail("next change time is wrong: " + panel.nextChangeLabel())
+        return
+      }
+      fakeService.nextChangeAtMs = panel.nowMs + 30 * 86400000
+      fakeService.retryAfterMs = 1
+      if (panel.nextChangeLabel() !== "Retrying in 30 days") {
+        root.fail("retry time is wrong: " + panel.nextChangeLabel())
+        return
+      }
+      fakeService.nextChangeAtMs = panel.nowMs + 20 * 60000
+      fakeService.retryAfterMs = 0
+      if (panel.nextChangeLabel() !== "Next change in 20 min") {
+        root.fail("minute countdown is wrong: " + panel.nextChangeLabel())
         return
       }
 

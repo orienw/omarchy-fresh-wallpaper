@@ -14,6 +14,7 @@ Panel {
   property int cursorIndex: 0
   property bool customIntervalRequested: false
   property int customIntervalDraft: 60
+  property double nowMs: Date.now()
 
   readonly property var barIdentity: hostWidget || root
   readonly property var wallpaperService: bar && bar.shell
@@ -31,6 +32,8 @@ Panel {
     : String(currentWallpaper.path || "")
   readonly property bool previewPlaceholderVisible: previewImage.status !== Image.Ready
   readonly property bool busy: wallpaperService ? wallpaperService.running : false
+  readonly property double nextChangeAtMs: wallpaperService ? Number(wallpaperService.nextChangeAtMs || 0) : 0
+  readonly property bool retryPending: wallpaperService ? Number(wallpaperService.retryAfterMs || 0) > 0 : false
   readonly property string errorText: wallpaperService ? wallpaperService.lastError : ""
   readonly property color foreground: bar ? bar.foreground : Color.foreground
   readonly property color urgent: bar ? bar.urgent : Color.urgent
@@ -114,12 +117,29 @@ Panel {
     return "Changed " + Qt.formatDateTime(changed, "MMM d, h:mm AP")
   }
 
+  function nextChangeLabel() {
+    if (nextChangeAtMs <= 0) return ""
+    var minutes = Math.max(1, Math.round((nextChangeAtMs - nowMs) / 60000))
+    var remaining = minutes < 60 ? minutes + " min"
+      : minutes < 48 * 60 ? Math.round(minutes / 60) + "h"
+      : Math.round(minutes / 1440) + " days"
+    return (retryPending ? "Retrying in " : "Next change in ") + remaining
+  }
+
   onOpenedChanged: if (opened && wallpaperService) wallpaperService.checkBackground()
   onConfiguredIntervalChanged: {
     if (configuredInterval > 0) customIntervalDraft = configuredInterval
     if (intervalIsPreset) customIntervalRequested = false
   }
   onStartupCursorIndexChanged: cursorIndex = Math.min(cursorIndex, startupCursorIndex)
+
+  Timer {
+    interval: 30000
+    repeat: true
+    running: root.opened
+    triggeredOnStart: true
+    onTriggered: root.nowMs = Date.now()
+  }
 
   KeyboardPanel {
     id: panel
@@ -158,6 +178,7 @@ Panel {
           BorderSurface {
             width: Style.space(112)
             height: Style.space(63)
+            anchors.verticalCenter: parent.verticalCenter
             radius: Style.cornerRadius
             color: Style.normalFillFor(root.foreground, Color.accent)
             borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
@@ -208,6 +229,16 @@ Panel {
                 : (root.showingExternalBackground
                   ? "Set outside Fresh Wallpaper"
                   : root.changedLabel(root.currentWallpaper.changedAt))
+              color: Qt.darker(root.foreground, 1.4)
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+              elide: Text.ElideRight
+            }
+
+            Text {
+              visible: text !== ""
+              width: parent.width
+              text: root.busy ? "" : root.nextChangeLabel()
               color: Qt.darker(root.foreground, 1.4)
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
