@@ -12,6 +12,7 @@ Its small bar control opens a native configuration panel. Fresh Wallpaper runs i
 - Downloads a UHD Bing wallpaper the first time the plugin is enabled.
 - Changes the wallpaper daily.
 - Schedules Daily, Weekly, and Monthly as elapsed time after the last successful change.
+- Applies a change that came due during sleep within a minute of waking.
 - Does not force another change when the Omarchy shell or plugin reloads.
 - Recovers a missing cached wallpaper on startup, while preserving an available background selected outside the plugin.
 - Chooses an image not used yet from Bing's current eight-day archive.

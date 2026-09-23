@@ -104,7 +104,7 @@ ShellRoot {
         root.fail("initial refresh behavior is incorrect")
         return
       }
-      if (service.scheduleChunkMs !== 60 * 60 * 1000) {
+      if (service.scheduleChunkMs !== 60 * 1000) {
         root.fail("schedule wake interval is not suspend-safe")
         return
       }

@@ -60,7 +60,7 @@ Item {
   property int deferCount: 0
   property bool loadingInitialState: false
   readonly property bool running: fetchProcess.running
-  readonly property double scheduleChunkMs: 3600000
+  readonly property double scheduleChunkMs: 60000
 
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
