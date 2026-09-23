@@ -25,8 +25,11 @@ ShellRoot {
     property int intervalMinutes: 1440
     property bool runOnStart: false
     property var settings: ({})
+    property string externalBackgroundPath: ""
+    property int backgroundChecks: 0
 
     function startRefresh(trigger) { return trigger }
+    function checkBackground() { backgroundChecks++ }
     function setProvider(value) { provider = value; return value }
     function setIntervalMinutes(value) { intervalMinutes = Number(value); return String(value) }
     function setMarket(value) { market = value; return value }

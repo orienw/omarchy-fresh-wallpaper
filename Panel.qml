@@ -22,7 +22,13 @@ Panel {
   readonly property var currentWallpaper: wallpaperService
     ? wallpaperService.currentWallpaper
     : ({})
-  readonly property string previewPath: String(currentWallpaper.path || "")
+  readonly property string externalBackgroundPath: wallpaperService
+    ? String(wallpaperService.externalBackgroundPath || "")
+    : ""
+  readonly property bool showingExternalBackground: externalBackgroundPath !== ""
+  readonly property string previewPath: showingExternalBackground
+    ? externalBackgroundPath
+    : String(currentWallpaper.path || "")
   readonly property bool previewPlaceholderVisible: previewImage.status !== Image.Ready
   readonly property bool busy: wallpaperService ? wallpaperService.running : false
   readonly property string errorText: wallpaperService ? wallpaperService.lastError : ""
@@ -108,6 +114,7 @@ Panel {
     return "Changed " + Qt.formatDateTime(changed, "MMM d, h:mm AP")
   }
 
+  onOpenedChanged: if (opened && wallpaperService) wallpaperService.checkBackground()
   onConfiguredIntervalChanged: {
     if (configuredInterval > 0) customIntervalDraft = configuredInterval
     if (intervalIsPreset) customIntervalRequested = false
@@ -183,7 +190,9 @@ Panel {
 
             Text {
               width: parent.width
-              text: root.currentWallpaper.title || "Fresh Wallpaper"
+              text: root.showingExternalBackground
+                ? "Another background"
+                : root.currentWallpaper.title || "Fresh Wallpaper"
               textFormat: Text.PlainText
               color: root.foreground
               font.family: root.fontFamily
@@ -196,7 +205,9 @@ Panel {
               width: parent.width
               text: root.busy
                 ? "Finding a fresh image..."
-                : root.changedLabel(root.currentWallpaper.changedAt)
+                : (root.showingExternalBackground
+                  ? "Set outside Fresh Wallpaper"
+                  : root.changedLabel(root.currentWallpaper.changedAt))
               color: Qt.darker(root.foreground, 1.4)
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -219,7 +230,7 @@ Panel {
         Text {
           visible: text !== ""
           width: parent.width
-          text: root.currentWallpaper.copyright || ""
+          text: root.showingExternalBackground ? "" : root.currentWallpaper.copyright || ""
           textFormat: Text.PlainText
           color: Qt.darker(root.foreground, 1.4)
           font.family: root.fontFamily

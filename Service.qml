@@ -17,6 +17,7 @@ Item {
   readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || home + "/.local/state"
   readonly property string statePath: stateHome + "/omarchy/fresh-wallpaper/current.json"
   property string currentBackgroundLink: home + "/.local/state/omarchy/current/background"
+  property string externalBackgroundPath: ""
 
   property var settings: findSettings()
 
@@ -117,6 +118,15 @@ Item {
       "fresh-wallpaper", path, currentBackgroundLink
     ]
     initialWallpaperCheck.running = true
+  }
+
+  function checkBackground() {
+    if (backgroundCheck.running) return
+    backgroundCheck.command = [
+      "bash", "-c", 'printf "%s\\n%s\\n" "$(readlink -e -- "$1")" "$(readlink -e -- "$2")"',
+      "fresh-wallpaper", currentBackgroundLink, String((currentWallpaper && currentWallpaper.path) || "")
+    ]
+    backgroundCheck.running = true
   }
 
   function finishInitialization(hasWallpaper) {
@@ -257,6 +267,7 @@ Item {
     try {
       var parsed = JSON.parse(String(raw || "").trim())
       currentWallpaper = parsed
+      externalBackgroundPath = ""
       lastError = ""
       consecutiveFailures = 0
       failureNotified = false
@@ -430,6 +441,28 @@ Item {
       var path = String((root.currentWallpaper && root.currentWallpaper.path) || "")
       if (path !== command[4]) root.checkInitialWallpaper()
       else root.finishInitialization(exitCode === 0)
+    }
+    // qmllint enable signal-handler-parameters
+  }
+
+  Process {
+    id: backgroundCheck
+
+    stdout: StdioCollector {
+      id: backgroundCheckStdout
+      waitForEnd: true
+    }
+
+    // qmllint disable signal-handler-parameters
+    onExited: function() {
+      var path = String((root.currentWallpaper && root.currentWallpaper.path) || "")
+      if (path !== command[5]) {
+        root.checkBackground()
+        return
+      }
+      var lines = String(backgroundCheckStdout.text || "").split("\n")
+      var desktop = lines[0] || ""
+      root.externalBackgroundPath = desktop !== "" && desktop !== (lines[1] || "") ? desktop : ""
     }
     // qmllint enable signal-handler-parameters
   }
