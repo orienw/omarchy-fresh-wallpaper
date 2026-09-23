@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.orienw.fresh-wallpaper",
   "name": "Fresh Wallpaper",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "author": "Orien",
   "license": "MIT",
   "description": "Rotates your wallpaper through Bing's daily UHD photos on a schedule you pick, with one-click changes right in the Omarchy bar.",
