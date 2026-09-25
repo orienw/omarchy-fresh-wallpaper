@@ -131,6 +131,8 @@ Fresh Wallpaper makes HTTPS requests to `www.bing.com`. Redirects are restricted
 
 The helper fully decodes each JPEG before changing the desktop, rejecting incomplete or corrupt downloads and cache entries. A failed request leaves the current Omarchy background untouched.
 
+The Omarchy shell never reads the plugin's state files or the paths they name. It asks the helper for a status instead. The helper only reads state files that are regular files, never through a symlink or from a FIFO, ignores any over 256 KiB, and only trusts wallpapers it saved in its own cache directory. A status only names images that are regular files within the 50 MiB download limit, and the helper refuses to run if its cache or state directory is a symlink. Each update has a 25-minute deadline and each status request a 10-second one, and the shell caps how much of the helper's output it keeps.
+
 Bing images remain copyrighted by their respective owners. Use them as personal desktop wallpapers and inspect the preserved attribution with the status command.
 
 ## Update

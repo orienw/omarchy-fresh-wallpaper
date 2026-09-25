@@ -1,7 +1,35 @@
 #!/usr/bin/env bash
 
+# The real helper answers --status. Only the first status request misbehaves when
+# a test asks for it, so the service can recover afterwards.
+if [[ ${1:-} == --status ]]; then
+  if [[ -n ${FRESH_WALLPAPER_TEST_STATUS_LOG:-} && ! -e $FRESH_WALLPAPER_TEST_STATUS_LOG ]]; then
+    case ${FRESH_WALLPAPER_TEST_STATUS:-} in
+      hang)
+        sleep 30 &
+        printf '%s\n' "$!" >"$FRESH_WALLPAPER_TEST_STATUS_LOG"
+        wait
+        ;;
+      noisy)
+        : >"$FRESH_WALLPAPER_TEST_STATUS_LOG"
+        head -c 1000000 /dev/zero | tr '\0' ' '
+        ;;
+    esac
+  fi
+  exec bash "$FRESH_WALLPAPER_TEST_REAL_HELPER" "$@"
+fi
 if [[ -n ${FRESH_WALLPAPER_TEST_FETCH_LOG:-} ]]; then
   printf '%s\n' "$*" >>"$FRESH_WALLPAPER_TEST_FETCH_LOG"
+fi
+if [[ -n ${FRESH_WALLPAPER_TEST_HANG:-} ]]; then
+  sleep 30 &
+  printf '%s\n' "$!" >"$FRESH_WALLPAPER_TEST_HANG"
+  wait
+fi
+if [[ ${FRESH_WALLPAPER_TEST_NOISE:-0} == 1 ]]; then
+  head -c 1000000 /dev/zero | tr '\0' e >&2
+  sleep 0.5
+  exit 1
 fi
 if [[ ${FRESH_WALLPAPER_TEST_DEFER:-0} == 1 ]]; then
   printf 'fresh-wallpaper: network is not ready\n' >&2

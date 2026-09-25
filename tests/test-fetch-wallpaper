@@ -247,7 +247,8 @@ use_case interrupted-save
 mkdir -p "$TEST_TMP/interrupted-save/bin"
 cat >"$TEST_TMP/interrupted-save/bin/mv" <<MV
 #!/bin/sh
-case "\$3" in
+for target; do :; done
+case "\$target" in
   */omarchy/fresh-wallpaper/*.json)
     count=\$(( \$(cat "\$TEST_MV_COUNT" 2>/dev/null || echo 0) + 1 ))
     echo "\$count" >"\$TEST_MV_COUNT"
@@ -322,14 +323,190 @@ use_case long-metadata
 long_fixture="$TEST_TMP/long-metadata/bing.json"
 head -c 150000 /dev/zero | tr '\0' x \
   | jq -Rs --slurpfile base "$TEST_FIXTURE_DIR/bing.json" \
-    '. as $long | $base[0] | .images |= map(.title = $long | .copyright = $long)' >"$long_fixture"
+    '. as $long | $base[0] | .images |= map(.title = $long[:1024] | .copyright = $long)' >"$long_fixture"
 export TEST_BING_FIXTURE=$long_fixture
 long_first=$(fetch)
-jq -e '(.title | length) == 150000 and (.copyright | length) == 150000' >/dev/null <<<"$long_first"
+jq -e '(.title | length) == 1024 and .copyright == ""' >/dev/null <<<"$long_first"
 fetch >/dev/null
 [[ $(jq 'length' "$XDG_STATE_HOME/omarchy/fresh-wallpaper/recent.json") -eq 2 ]]
 [[ $(fetch --previous | jq -r '.path') == "$(jq -r '.path' <<<"$long_first")" ]]
 [[ $(jq 'length' "$XDG_STATE_HOME/omarchy/fresh-wallpaper/recent.json") -eq 1 ]]
+
+use_case untrusted-state
+state_dir="$XDG_STATE_HOME/omarchy/fresh-wallpaper"
+cache_dir="$XDG_CACHE_HOME/omarchy/fresh-wallpaper"
+outside="$TEST_TMP/untrusted-state/outside"
+mkdir -p "$outside"
+refresh() {
+  PATH="$TEST_TMP/full-passes/bin:$PATH" fetch >/dev/null
+}
+previous_rejects() {
+  local status=0
+  timeout 20 "$PROJECT_DIR/scripts/fetch-wallpaper" --previous >/dev/null 2>&1 || status=$?
+  if (( status != 1 )); then
+    printf 'Previous exited %s with %s\n' "$status" "$1" >&2
+    exit 1
+  fi
+}
+
+refresh
+refresh
+printf 'keep\n' >"$outside/lock"
+ln -sf -- "$outside/lock" "$state_dir/.lock"
+for name in current recent history; do
+  mv -- "$state_dir/$name.json" "$outside/$name.json"
+  ln -s -- "$outside/$name.json" "$state_dir/$name.json"
+done
+outside_sum=$(cat -- "$outside"/* | sha256sum)
+previous_rejects 'symlinked state files'
+refresh
+[[ ! -L $state_dir/current.json && ! -L $state_dir/recent.json && ! -L $state_dir/history.json ]]
+if [[ $(cat -- "$outside"/* | sha256sum) != "$outside_sum" ]]; then
+  printf 'the helper wrote through a symlinked state or lock file\n' >&2
+  exit 1
+fi
+
+mkdir -p -- "$outside/directory"
+rm -f -- "$state_dir/current.json"
+ln -s -- "$outside/directory" "$state_dir/current.json"
+refresh
+if [[ -L $state_dir/current.json || ! -f $state_dir/current.json || -n $(ls -A -- "$outside/directory") ]]; then
+  printf 'the helper saved state into a symlinked directory\n' >&2
+  exit 1
+fi
+
+refresh
+cp -- "$state_dir/recent.json" "$TEST_TMP/untrusted-state/recent.saved"
+{ cat -- "$state_dir/recent.json"; head -c 270000 /dev/zero | tr '\0' '\n'; } >"$TEST_TMP/untrusted-state/padded"
+mv -- "$TEST_TMP/untrusted-state/padded" "$state_dir/recent.json"
+previous_rejects 'an oversized Previous history'
+
+rm -f -- "$state_dir/recent.json"
+mkfifo -- "$state_dir/recent.json"
+previous_rejects 'an empty FIFO Previous history'
+# Another reader keeps the data buffered after the writer closes, so a read
+# would get the whole history and then end of file.
+exec 7<>"$state_dir/recent.json" 8<"$state_dir/recent.json"
+cat -- "$TEST_TMP/untrusted-state/recent.saved" >&7
+exec 7>&-
+previous_rejects 'a FIFO Previous history holding data'
+exec 8<&-
+refresh
+[[ -f $state_dir/recent.json && ! -p $state_dir/recent.json ]]
+
+# A near-limit history from an earlier version is trimmed rather than saved over
+# the limit, which would lose it on the next read.
+refresh
+jq -c --argjson n "$((262144 - 40 - $(wc -c <"$state_dir/recent.json")))" '.[1].pad = ("x" * $n)' \
+  "$state_dir/recent.json" >"$TEST_TMP/untrusted-state/legacy"
+mv -- "$TEST_TMP/untrusted-state/legacy" "$state_dir/recent.json"
+(( $(wc -c <"$state_dir/recent.json") <= 262144 ))
+kept=$(jq -r '.[0].path' "$state_dir/recent.json")
+refresh
+(( $(wc -c <"$state_dir/recent.json") <= 262144 ))
+if [[ $(fetch --previous | jq -r '.path') != "$kept" ]]; then
+  printf 'a near-limit history was not trimmed to fit\n' >&2
+  exit 1
+fi
+
+foreign="$outside/bing-20260101-Foreign_EN-US0000000000-UHD.jpg"
+linked="$cache_dir/bing-20260102-Linked_EN-US0000000000-UHD.jpg"
+relative="bing-20260103-Relative_EN-US0000000000-UHD.jpg"
+long="$cache_dir/bing-20260104-$(printf 'L%.0s' {1..121})-UHD.jpg"
+oversized="$cache_dir/bing-20260105-Oversized_EN-US0000000000-UHD.jpg"
+{
+  printf '\xff\xd8'
+  for segment in {1..820}; do
+    printf '\xff\xfe\xff\xff'
+    head -c 65533 /dev/zero
+  done
+  tail -c +3 -- "$TEST_FIXTURE_DIR/wallpaper.jpg"
+} >"$oversized"
+djpeg -strict -outfile /dev/null "$oversized"
+(( $(stat -c %s -- "$oversized") > 52428800 ))
+cp -- "$TEST_FIXTURE_DIR/wallpaper.jpg" "$foreign"
+cp -- "$TEST_FIXTURE_DIR/wallpaper.jpg" "$outside/$relative"
+cp -- "$TEST_FIXTURE_DIR/wallpaper.jpg" "$long"
+ln -s -- "$foreign" "$linked"
+jq -c --arg foreign "$foreign" --arg linked "$linked" --arg relative "$relative" --arg long "$long" \
+  --arg oversized "$oversized" \
+  '[.[0], {path: $foreign}, {path: $linked}, {path: $relative}, {path: $long}, {path: $oversized}]' \
+  "$state_dir/recent.json" >"$TEST_TMP/untrusted-state/recent.json"
+mv -- "$TEST_TMP/untrusted-state/recent.json" "$state_dir/recent.json"
+(cd -- "$outside" && previous_rejects 'wallpapers it cannot trust')
+
+for linked_dir in state cache; do
+  use_case "linked-$linked_dir-dir"
+  fetch >/dev/null
+  fetch >/dev/null
+  if [[ $linked_dir == state ]]; then
+    plugin_dir="$XDG_STATE_HOME/omarchy/fresh-wallpaper"
+  else
+    plugin_dir="$XDG_CACHE_HOME/omarchy/fresh-wallpaper"
+  fi
+  mv -- "$plugin_dir" "$plugin_dir.real"
+  ln -s -- "$plugin_dir.real" "$plugin_dir"
+  : >"$TEST_APPLY_LOG"
+  before=$(find "$plugin_dir.real" -printf '%P %s\n' | sort)
+  jq -e '.current == null and .recentCount == 0 and .wallpaper == ""' >/dev/null <<<"$(fetch --status)"
+  if fetch >/dev/null 2>&1 || [[ -s $TEST_APPLY_LOG || $(find "$plugin_dir.real" -printf '%P %s\n' | sort) != "$before" ]]; then
+    printf 'the helper used a symlinked %s directory\n' "$linked_dir" >&2
+    exit 1
+  fi
+done
+
+use_case status
+status() {
+  fetch --status --background "$TEST_TMP/status/background"
+}
+jq -e '. == {current: null, recentCount: 0, wallpaper: "", external: "", hasBackground: false}' \
+  >/dev/null <<<"$(status)"
+if fetch --status --previous >/dev/null 2>&1 || fetch --status --no-apply >/dev/null 2>&1; then
+  printf 'status accepted --previous or --no-apply\n' >&2
+  exit 1
+fi
+picks=()
+for pick in 1 2; do
+  picks+=("$(PATH="$TEST_TMP/full-passes/bin:$PATH" fetch | jq -r '.path')")
+done
+jq -e --arg path "${picks[1]}" \
+  '.current.path == $path and .recentCount == 2 and .wallpaper == $path and .external == "" and .hasBackground == false' \
+  >/dev/null <<<"$(status)"
+
+# The desktop shows this wallpaper, another image, a FIFO, or an oversized image.
+ln -s -- "${picks[1]}" "$TEST_TMP/status/background"
+jq -e '.external == "" and .hasBackground' >/dev/null <<<"$(status)"
+ln -sfn -- "$TEST_FIXTURE_DIR/wallpaper.jpg" "$TEST_TMP/status/background"
+jq -e --arg path "$TEST_FIXTURE_DIR/wallpaper.jpg" '.external == $path and .hasBackground' >/dev/null <<<"$(status)"
+mkfifo -- "$TEST_TMP/status/fifo"
+ln -sfn -- "$TEST_TMP/status/fifo" "$TEST_TMP/status/background"
+jq -e '.external == "" and (.hasBackground | not)' >/dev/null <<<"$(status)"
+truncate -s 60M -- "$TEST_TMP/status/large.jpg"
+ln -sfn -- "$TEST_TMP/status/large.jpg" "$TEST_TMP/status/background"
+jq -e '.external == "" and .hasBackground' >/dev/null <<<"$(status)"
+
+# The wallpaper file is a symlink out of the cache, or oversized. Neither is
+# previewed, not even as the desktop background.
+ln -sfn -- "$TEST_FIXTURE_DIR/wallpaper.jpg" "${picks[1]}"
+ln -sfn -- "${picks[1]}" "$TEST_TMP/status/background"
+jq -e --arg path "${picks[1]}" '.current.path == $path and .wallpaper == "" and .external == ""' \
+  >/dev/null <<<"$(status)"
+rm -f -- "${picks[1]}"
+truncate -s 60M -- "${picks[1]}"
+jq -e '.wallpaper == "" and .external == ""' >/dev/null <<<"$(status)"
+
+# A download never lands inside a directory that a cache symlink points to.
+use_case linked-download
+export TEST_BING_FIXTURE=bing-single.json
+linked_entry="$XDG_CACHE_HOME/omarchy/fresh-wallpaper/bing-20260817-OnlyWallpaper_EN-US0000000001-UHD.jpg"
+mkdir -p "$(dirname "$linked_entry")" "$TEST_TMP/linked-download/outside"
+ln -s -- "$TEST_TMP/linked-download/outside" "$linked_entry"
+downloaded=$(fetch --no-apply | jq -r '.path')
+if [[ $downloaded != "$linked_entry" || -L $downloaded || ! -f $downloaded \
+    || -n $(ls -A -- "$TEST_TMP/linked-download/outside") ]]; then
+  printf 'a download followed a symlinked cache entry\n' >&2
+  exit 1
+fi
 
 use_case previous-upgrade
 upgrade_state="$XDG_STATE_HOME/omarchy/fresh-wallpaper"

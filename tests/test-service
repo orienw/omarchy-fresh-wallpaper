@@ -13,11 +13,18 @@ DUE_STARTUP_STATE=$(mktemp -d /tmp/fresh-wallpaper-due-startup-state.XXXXXX)
 DUE_STARTUP_LOG=$(mktemp /tmp/fresh-wallpaper-due-startup-log.XXXXXX)
 OFFLINE_STATE=$(mktemp -d /tmp/fresh-wallpaper-offline-state.XXXXXX)
 RECOVERY_STATE=$(mktemp -d /tmp/fresh-wallpaper-recovery.XXXXXX)
+BOUNDS_STATE=$(mktemp -d /tmp/fresh-wallpaper-bounds.XXXXXX)
 trap 'rm -rf -- "$TEST_RUNTIME" "$TEST_STATE" "$TEST_CACHE" "$FIRST_RUN_STATE" \
-  "$DUE_STARTUP_STATE" "$OFFLINE_STATE" "$RECOVERY_STATE"; rm -f -- "$DUE_STARTUP_LOG"' EXIT
+  "$DUE_STARTUP_STATE" "$OFFLINE_STATE" "$RECOVERY_STATE" "$BOUNDS_STATE"; rm -f -- "$DUE_STARTUP_LOG"' EXIT
 
-export FRESH_WALLPAPER_TEST_IMAGE="$TEST_DIR/fixtures/wallpaper.jpg"
+# The service only trusts wallpapers in the helper's cache.
+export XDG_CACHE_HOME="$TEST_CACHE"
+CACHE_DIR="$TEST_CACHE/omarchy/fresh-wallpaper"
+mkdir -p "$CACHE_DIR"
+export FRESH_WALLPAPER_TEST_IMAGE="$CACHE_DIR/bing-20260801-Test_EN-US0000000000-UHD.jpg"
+cp -- "$TEST_DIR/fixtures/wallpaper.jpg" "$FRESH_WALLPAPER_TEST_IMAGE"
 export FRESH_WALLPAPER_TEST_BACKGROUND="$TEST_CACHE/current-background"
+export FRESH_WALLPAPER_TEST_REAL_HELPER="$PROJECT_DIR/scripts/fetch-wallpaper"
 
 chmod 700 "$TEST_RUNTIME"
 TEST_PLUGIN_DIR="$TEST_RUNTIME/plugin #?%"
@@ -42,7 +49,6 @@ for shell_api in "${shell_apis[@]}"; do
     WAYLAND_DISPLAY= \
     XDG_RUNTIME_DIR="$TEST_RUNTIME" \
     XDG_STATE_HOME="$TEST_STATE" \
-    XDG_CACHE_HOME="$TEST_CACHE" \
     PATH="$TEST_DIR/mocks:$PATH" \
     FRESH_WALLPAPER_TEST_SHELL_API="$shell_api" \
     QT_QPA_PLATFORM=offscreen \
@@ -108,12 +114,13 @@ fi
 for recovery_case in missing replaced; do
   recovery_dir="$RECOVERY_STATE/$recovery_case"
   mkdir -p "$recovery_dir/omarchy/fresh-wallpaper"
-  jq -cn --arg path "$recovery_dir/deleted.jpg" --arg changedAt "$STATE_TIMESTAMP" \
+  deleted_path="$CACHE_DIR/bing-20200101-Deleted_EN-US0000000000-UHD.jpg"
+  jq -cn --arg path "$deleted_path" --arg changedAt "$STATE_TIMESTAMP" \
     '{path: $path, changedAt: $changedAt}' >"$recovery_dir/omarchy/fresh-wallpaper/current.json"
   if [[ $recovery_case == missing ]]; then
-    ln -s "$recovery_dir/deleted.jpg" "$recovery_dir/background"
+    ln -s "$deleted_path" "$recovery_dir/background"
   else
-    ln -s "$FRESH_WALLPAPER_TEST_IMAGE" "$recovery_dir/background"
+    ln -s "$TEST_DIR/fixtures/wallpaper.jpg" "$recovery_dir/background"
   fi
   recovery_output=$(
     WAYLAND_DISPLAY= \
@@ -130,4 +137,75 @@ for recovery_case in missing replaced; do
   fi
 done
 
-printf 'service schedule, first-run, startup, offline, and recovery tests passed\n'
+long_image="$CACHE_DIR/bing-20260803-$(printf 'L%.0s' {1..121})-UHD.jpg"
+cp -- "$TEST_DIR/fixtures/wallpaper.jpg" "$long_image"
+for bounds_case in symlink oversized fifo linked-dir foreign long-name \
+    status-hang status-noisy hang noisy; do
+  bounds_dir="$BOUNDS_STATE/$bounds_case"
+  bounds_state_dir="$bounds_dir/omarchy/fresh-wallpaper"
+  hang_pid=""
+  noise=0
+  status_mode=""
+  status_log=""
+  mkdir -p "$bounds_state_dir"
+  jq -cn --arg path "$FRESH_WALLPAPER_TEST_IMAGE" --arg changedAt "$STATE_TIMESTAMP" \
+    '{path: $path, changedAt: $changedAt}' >"$bounds_dir/trusted.json"
+  case $bounds_case in
+    symlink) ln -s -- "$bounds_dir/trusted.json" "$bounds_state_dir/current.json" ;;
+    oversized)
+      { cat -- "$bounds_dir/trusted.json"; head -c 270000 /dev/zero | tr '\0' '\n'; } \
+        >"$bounds_state_dir/current.json"
+      ;;
+    fifo)
+      # A second reader keeps the state buffered after the writer closes.
+      mkfifo -- "$bounds_state_dir/current.json"
+      exec 7<>"$bounds_state_dir/current.json" 8<"$bounds_state_dir/current.json"
+      cat -- "$bounds_dir/trusted.json" >&7
+      exec 7>&-
+      ;;
+    linked-dir)
+      mv -- "$bounds_state_dir" "$bounds_dir/real"
+      ln -s -- "$bounds_dir/real" "$bounds_state_dir"
+      cp -- "$bounds_dir/trusted.json" "$bounds_dir/real/current.json"
+      ;;
+    foreign | long-name)
+      case $bounds_case in
+        foreign) untrusted_path="$TEST_DIR/fixtures/wallpaper.jpg" ;;
+        long-name) untrusted_path=$long_image ;;
+      esac
+      jq -cn --arg path "$untrusted_path" --arg changedAt "$STATE_TIMESTAMP" \
+        '{path: $path, changedAt: $changedAt}' >"$bounds_state_dir/current.json"
+      ;;
+    status-hang | status-noisy)
+      cp -- "$bounds_dir/trusted.json" "$bounds_state_dir/current.json"
+      status_mode=${bounds_case#status-}
+      status_log="$bounds_dir/status.log"
+      ;;
+    hang) hang_pid="$bounds_dir/sleep.pid" ;;
+    noisy) noise=1 ;;
+  esac
+  bounds_output=$(
+    WAYLAND_DISPLAY= \
+    XDG_RUNTIME_DIR="$TEST_RUNTIME" \
+    XDG_STATE_HOME="$bounds_dir" \
+    FRESH_WALLPAPER_TEST_BOUNDS="$bounds_case" \
+    FRESH_WALLPAPER_TEST_HANG="$hang_pid" \
+    FRESH_WALLPAPER_TEST_NOISE="$noise" \
+    FRESH_WALLPAPER_TEST_STATUS="$status_mode" \
+    FRESH_WALLPAPER_TEST_STATUS_LOG="$status_log" \
+    QT_QPA_PLATFORM=offscreen \
+      quickshell --no-color -p "$TEST_DIR/test-bounds.qml" 2>&1
+  )
+  [[ $bounds_case != fifo ]] || exec 8<&-
+  if ! grep -q 'service bounds test passed' <<<"$bounds_output"; then
+    printf '%s\n' "$bounds_output" >&2
+    exit 1
+  fi
+  [[ $status_mode != hang ]] || hang_pid=$status_log
+  if [[ -n $hang_pid ]] && kill -0 "$(cat -- "$hang_pid")" 2>/dev/null; then
+    printf 'the timed-out helper left a process running\n' >&2
+    exit 1
+  fi
+done
+
+printf 'service schedule, first-run, startup, offline, recovery, and bounds tests passed\n'

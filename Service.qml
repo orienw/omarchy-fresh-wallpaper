@@ -14,11 +14,17 @@ Item {
   readonly property string sourceDir: decodeURIComponent(String(Qt.resolvedUrl("."))
     .replace(/^file:\/\//, "")).replace(/\/$/, "")
   readonly property string home: Quickshell.env("HOME")
-  readonly property string stateHome: Quickshell.env("XDG_STATE_HOME") || home + "/.local/state"
-  readonly property string statePath: stateHome + "/omarchy/fresh-wallpaper/current.json"
-  readonly property string recentPath: stateHome + "/omarchy/fresh-wallpaper/recent.json"
+  readonly property string helperPath: sourceDir + "/scripts/fetch-wallpaper"
+  // Past the helper's lock, network, and download limits even if all of them max
+  // out, about 20 minutes.
+  property int fetchTimeoutSeconds: 1500
+  property int statusTimeoutSeconds: 10
+  // A status holds current.json, which the helper keeps under 256 KiB, and three paths.
+  readonly property int statusMaxBytes: 278528
   property string currentBackgroundLink: home + "/.local/state/omarchy/current/background"
+  // Both come from the helper's status, which only names files it can preview.
   property string externalBackgroundPath: ""
+  property string previewWallpaperPath: ""
 
   property var settings: findSettings()
 
@@ -60,12 +66,16 @@ Item {
   property bool startupResolved: false
   property string pendingStartupTrigger: ""
   property int deferCount: 0
-  property bool loadingInitialState: false
+  property bool awaitingInitialState: false
+  property double lastSuccessMs: 0
+  property string fetchError: ""
   // recent.json is the record the helper's Previous trusts, so availability
   // follows it rather than current.json.
   property int recentCount: 0
   readonly property bool previousAvailable: recentCount > 1
-  readonly property bool running: fetchProcess.running
+  // A run counts until its status lands, so the panel never flashes the old wallpaper.
+  property bool fetchSettling: false
+  readonly property bool running: fetchProcess.running || fetchSettling
   readonly property double nextChangeAtMs: scheduledAtMs()
   readonly property double scheduleChunkMs: 60000
 
@@ -99,40 +109,51 @@ Item {
   function initialize() {
     if (initialized || initializing || !shell || sourceDir === "") return
     initializing = true
+    awaitingInitialState = true
     scheduleOriginMs = Date.now()
-
-    var raw = ""
-    loadingInitialState = true
-    try {
-      raw = stateFile.text()
-    } finally {
-      loadingInitialState = false
-    }
-    loadState(raw)
-    if (!hasCurrentWallpaper() || runOnStart) finishInitialization(hasCurrentWallpaper())
-    else checkInitialWallpaper()
+    refreshStatus()
   }
 
-  function checkInitialWallpaper() {
-    var path = String((currentWallpaper && currentWallpaper.path) || "")
-    if (path === "") {
-      finishInitialization(false)
+  // Asks the helper for everything the service shows, so the shell never reads a
+  // state file or a path one names. head caps what the shell collects. A request
+  // while one runs queues a fresh one, so a result that predates a change is
+  // never applied.
+  function refreshStatus() {
+    if (sourceDir === "") return
+    statusProcess.command = [
+      "timeout", String(statusTimeoutSeconds), "bash", "-c",
+      'set -o pipefail; bash "$1" --status --background "$2" | head -c "$3"',
+      "fresh-wallpaper", helperPath, currentBackgroundLink, String(statusMaxBytes + 1)
+    ]
+    if (statusProcess.running) statusProcess.queued = true
+    else statusProcess.running = true
+  }
+
+  // An unreadable status counts as no saved wallpaper.
+  function statusRead(raw) {
+    var status = ({})
+    try {
+      var parsed = JSON.parse(String(raw || ""))
+      if (parsed && typeof parsed === "object") status = parsed
+    } catch (error) {
+      console.warn("fresh-wallpaper: could not read the wallpaper status")
+    }
+    var current = status.current && typeof status.current === "object" ? status.current : null
+    if (current) currentWallpaper = current
+    recentCount = Math.max(0, Math.floor(Number(status.recentCount)) || 0)
+    previewWallpaperPath = String(status.wallpaper || "")
+    externalBackgroundPath = String(status.external || "")
+    fetchSettling = false
+
+    if (!awaitingInitialState) {
+      resolveStartup(hasCurrentWallpaper())
       return
     }
-    initialWallpaperCheck.command = [
-      "bash", "-c", '[[ -f "$1" && -s "$1" ]] || [[ -f "$2" && -s "$2" ]]',
-      "fresh-wallpaper", path, currentBackgroundLink
-    ]
-    initialWallpaperCheck.running = true
-  }
-
-  function checkBackground() {
-    if (backgroundCheck.running) return
-    backgroundCheck.command = [
-      "bash", "-c", 'printf "%s\\n%s\\n" "$(readlink -e -- "$1")" "$(readlink -e -- "$2")"',
-      "fresh-wallpaper", currentBackgroundLink, String((currentWallpaper && currentWallpaper.path) || "")
-    ]
-    backgroundCheck.running = true
+    // A saved wallpaper whose file is gone still counts while the desktop has a
+    // background, which may have been chosen outside the plugin.
+    awaitingInitialState = false
+    finishInitialization(current !== null
+      && (runOnStart || previewWallpaperPath !== "" || status.hasBackground === true))
   }
 
   function finishInitialization(hasWallpaper) {
@@ -195,9 +216,11 @@ Item {
     armSchedule()
   }
 
+  // A success counts as a change even before current.json is read back, so the
+  // schedule never fires again on the previous wallpaper's time.
   function lastChangeMs() {
     var changed = currentWallpaper ? Date.parse(String(currentWallpaper.changedAt || "")) : NaN
-    return isFinite(changed) ? changed : scheduleOriginMs
+    return Math.max(isFinite(changed) ? changed : scheduleOriginMs, lastSuccessMs)
   }
 
   function scheduledAtMs() {
@@ -253,57 +276,23 @@ Item {
   function runHelper(trigger, args) {
     lastTrigger = trigger
     lastError = ""
-    fetchProcess.command = ["bash", sourceDir + "/scripts/fetch-wallpaper"].concat(args)
+    fetchError = ""
+    fetchProcess.command = [
+      "timeout", "--kill-after=10", String(fetchTimeoutSeconds), "bash", helperPath
+    ].concat(args)
     fetchProcess.running = true
     return "started"
   }
 
-  function loadRecent(raw) {
-    try {
-      var parsed = JSON.parse(String(raw || ""))
-      recentCount = Array.isArray(parsed) ? parsed.length : 0
-    } catch (error) {
-      recentCount = 0
-    }
-  }
-
-  function loadState(raw) {
-    var text = String(raw || "").trim()
-    if (text === "") {
-      resolveStartup(hasCurrentWallpaper())
-      return
-    }
-
-    var hasWallpaper = false
-    try {
-      var parsed = JSON.parse(text)
-      if (parsed && typeof parsed === "object") {
-        currentWallpaper = parsed
-        hasWallpaper = String(parsed.path || "").trim() !== ""
-      }
-    } catch (error) {
-      console.warn("fresh-wallpaper: could not parse state:", error)
-    }
-    resolveStartup(hasWallpaper)
-  }
-
-  function processSucceeded(raw) {
-    try {
-      var parsed = JSON.parse(String(raw || "").trim())
-      currentWallpaper = parsed
-      externalBackgroundPath = ""
-      lastError = ""
-      consecutiveFailures = 0
-      failureNotified = false
-      deferCount = 0
-      retryAfterMs = 0
-      retryOrigin = ""
-      stateFile.reload()
-      recentFile.reload()
-      armSchedule()
-    } catch (error) {
-      processFailed("fetch helper returned invalid JSON")
-    }
+  function processSucceeded() {
+    lastSuccessMs = Date.now()
+    lastError = ""
+    consecutiveFailures = 0
+    failureNotified = false
+    deferCount = 0
+    retryAfterMs = 0
+    retryOrigin = ""
+    armSchedule()
   }
 
   function shouldNotifyFailure() {
@@ -327,10 +316,19 @@ Item {
   }
 
   function processExited(exitCode) {
-    if (exitCode === 0) processSucceeded(fetchStdout.text)
-    else if (lastTrigger === "previous") lastError = errorDetail(fetchStderr.text)
+    if (exitCode === 124) fetchError = "Wallpaper update timed out"
+    if (exitCode === 0) processSucceeded()
+    else if (lastTrigger === "previous") lastError = errorDetail(fetchError)
     else if (exitCode === 75 && !isUserTrigger(lastTrigger)) processDeferred()
-    else processFailed(fetchStderr.text || "Wallpaper update failed with exit code " + exitCode)
+    else processFailed(fetchError || "Wallpaper update failed with exit code " + exitCode)
+    // Even a failed run may have saved state before it stopped.
+    fetchSettling = true
+    refreshStatus()
+  }
+
+  // Keeps only the start of the helper's stderr, which is all errorDetail shows.
+  function appendFetchError(data) {
+    if (fetchError.length < 4096) fetchError += String(data).substring(0, 4096 - fetchError.length)
   }
 
   function errorDetail(message) {
@@ -348,7 +346,7 @@ Item {
 
     if (shouldNotifyFailure() && !notificationProcess.running) {
       notificationProcess.command = [
-        "omarchy-notification-send",
+        "timeout", "10", "omarchy-notification-send",
         "Fresh Wallpaper",
         detail
       ]
@@ -423,7 +421,7 @@ Item {
       intervalMinutes: intervalMinutes,
       runOnStart: runOnStart,
       cacheLimit: cacheLimit,
-      running: fetchProcess.running,
+      running: running,
       nextRunAt: nextRunAt,
       lastTrigger: lastTrigger,
       lastError: lastError,
@@ -458,72 +456,36 @@ Item {
     onTriggered: root.checkSchedule()
   }
 
-  FileView {
-    id: stateFile
-    path: root.statePath
-    preload: false
-    blockLoading: true
-    watchChanges: true
-    printErrors: false
-    onLoaded: if (!root.loadingInitialState) root.loadState(text())
-    onLoadFailed: if (!root.loadingInitialState) root.resolveStartup(root.hasCurrentWallpaper())
-    onFileChanged: reload()
-  }
-
-  FileView {
-    id: recentFile
-    path: root.recentPath
-    watchChanges: true
-    printErrors: false
-    onLoaded: root.loadRecent(text())
-    onLoadFailed: root.recentCount = 0
-    onFileChanged: reload()
-  }
-
   Process {
-    id: initialWallpaperCheck
-    // qmllint disable signal-handler-parameters
-    onExited: function(exitCode) {
-      var path = String((root.currentWallpaper && root.currentWallpaper.path) || "")
-      if (path !== command[4]) root.checkInitialWallpaper()
-      else root.finishInitialization(exitCode === 0)
-    }
-    // qmllint enable signal-handler-parameters
-  }
-
-  Process {
-    id: backgroundCheck
+    id: statusProcess
+    property bool queued: false
 
     stdout: StdioCollector {
-      id: backgroundCheckStdout
+      id: statusStdout
       waitForEnd: true
     }
 
     // qmllint disable signal-handler-parameters
-    onExited: function() {
-      var path = String((root.currentWallpaper && root.currentWallpaper.path) || "")
-      if (path !== command[5]) {
-        root.checkBackground()
+    onExited: function(exitCode) {
+      if (queued) {
+        queued = false
+        running = true
         return
       }
-      var lines = String(backgroundCheckStdout.text || "").split("\n")
-      var desktop = lines[0] || ""
-      root.externalBackgroundPath = desktop !== "" && desktop !== (lines[1] || "") ? desktop : ""
+      root.statusRead(exitCode === 0 && statusStdout.data.byteLength <= root.statusMaxBytes
+        ? statusStdout.text : "")
     }
     // qmllint enable signal-handler-parameters
   }
 
+  // The helper saves its result to current.json, which its status reports back,
+  // so its stdout is discarded.
   Process {
     id: fetchProcess
 
-    stdout: StdioCollector {
-      id: fetchStdout
-      waitForEnd: true
-    }
-
-    stderr: StdioCollector {
-      id: fetchStderr
-      waitForEnd: true
+    stderr: SplitParser {
+      splitMarker: ""
+      onRead: function(data) { root.appendFetchError(data) }
     }
 
     // qmllint disable signal-handler-parameters

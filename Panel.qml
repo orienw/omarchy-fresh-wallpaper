@@ -29,7 +29,7 @@ Panel {
   readonly property bool showingExternalBackground: externalBackgroundPath !== ""
   readonly property string previewPath: showingExternalBackground
     ? externalBackgroundPath
-    : String(currentWallpaper.path || "")
+    : wallpaperService ? String(wallpaperService.previewWallpaperPath || "") : ""
   readonly property bool previewPlaceholderVisible: previewImage.status !== Image.Ready
   readonly property bool busy: wallpaperService ? wallpaperService.running : false
   readonly property string learnMoreUrl: showingExternalBackground
@@ -166,7 +166,7 @@ Panel {
     return (retryPending ? "Retrying in " : "Next change in ") + remaining
   }
 
-  onOpenedChanged: if (opened && wallpaperService) wallpaperService.checkBackground()
+  onOpenedChanged: if (opened && wallpaperService) wallpaperService.refreshStatus()
   onConfiguredIntervalChanged: {
     if (configuredInterval > 0) customIntervalDraft = configuredInterval
     if (intervalIsPreset) customIntervalRequested = false
@@ -228,6 +228,7 @@ Panel {
               id: previewImage
               anchors.fill: parent
               source: Util.fileUrl(root.previewPath)
+              sourceSize: Qt.size(width * 2, height * 2)
               asynchronous: true
               cache: false
               fillMode: Image.PreserveAspectCrop

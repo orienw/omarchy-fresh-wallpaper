@@ -26,14 +26,15 @@ ShellRoot {
     property bool runOnStart: false
     property var settings: ({})
     property string externalBackgroundPath: ""
+    property string previewWallpaperPath: currentWallpaper.path || ""
     property double nextChangeAtMs: 0
     property double retryAfterMs: 0
     property bool previousAvailable: false
     property int previousCalls: 0
-    property int backgroundChecks: 0
+    property int statusRefreshes: 0
 
     function startRefresh(trigger) { return trigger }
-    function checkBackground() { backgroundChecks++ }
+    function refreshStatus() { statusRefreshes++ }
     function startPrevious() { previousCalls++; return "started" }
     function setProvider(value) { provider = value; return value }
     function setIntervalMinutes(value) { intervalMinutes = Number(value); return String(value) }

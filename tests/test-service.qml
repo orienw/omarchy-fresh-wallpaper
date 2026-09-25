@@ -162,7 +162,7 @@ ShellRoot {
         root.fail("a missing wallpaper did not queue first-run")
         return
       }
-      service.loadState(JSON.stringify({path: root.existingWallpaperPath, changedAt: "2026-08-19T08:22:47Z"}))
+      service.statusRead(JSON.stringify({current: {path: root.existingWallpaperPath, changedAt: "2026-08-19T08:22:47Z"}}))
       if (service.pendingStartupTrigger !== "") {
         root.fail("a late wallpaper load did not cancel first-run")
         return
@@ -182,7 +182,7 @@ ShellRoot {
       service.deferCount = 0
       service.lastError = ""
       service.lastTrigger = ""
-      service.loadState(JSON.stringify({path: root.existingWallpaperPath, changedAt: new Date().toISOString()}))
+      service.statusRead(JSON.stringify({current: {path: root.existingWallpaperPath, changedAt: new Date().toISOString()}}))
 
       if (service.normalizedInterval(525601) !== 525600) {
         root.fail("custom interval maximum was not enforced")

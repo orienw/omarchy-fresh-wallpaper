@@ -7,10 +7,15 @@ MARKET="en-US"
 CACHE_LIMIT=30
 APPLY=1
 PREVIOUS=0
+STATUS=0
+BACKGROUND_LINK="$HOME/.local/state/omarchy/current/background"
 VERSION="0.1.5"
 NETWORK_WAIT_SECONDS=60
 ARCHIVE_MAX_BYTES=2097152
 IMAGE_MAX_BYTES=52428800
+# Service.qml reads state files with the same limit. Capped metadata keeps them
+# far below it, and FIT_STATE trims anything older that would not fit.
+STATE_MAX_BYTES=262144
 
 usage() {
   cat <<'USAGE'
@@ -23,6 +28,8 @@ Options:
   --network-wait-seconds <secs>  Wait for HTTPS connectivity before downloading (default: 60)
   --no-apply                     Download and report a wallpaper without applying it
   --previous                     Restore the wallpaper applied before the current one
+  --status                       Print the saved wallpaper state for the shell
+  --background <path>            Omarchy's background link, checked by --status
   -h, --help                     Show this help
 USAGE
 }
@@ -47,6 +54,20 @@ one_json() {
   jq -cs "if length == 1 and (.[0] | $1) then .[0] else error(\"unexpected JSON\") end"
 }
 
+# Prints a regular state file of at most STATE_MAX_BYTES without following a
+# symlink or waiting on a FIFO, so no other file can stand in for it. base64
+# carries the exact bytes, which command substitution would strip. Fails otherwise.
+read_state() {
+  local encoded
+  local padding
+
+  [[ -f $1 && ! -L $1 ]] || return 1
+  encoded=$(dd if="$1" bs=$((STATE_MAX_BYTES + 1)) count=1 iflag=nofollow,nonblock,fullblock status=none \
+    | base64 -w 0) || return 1
+  padding=${encoded##*[!=]}
+  (( ${#encoded} / 4 * 3 - ${#padding} <= STATE_MAX_BYTES )) && base64 -d <<<"$encoded"
+}
+
 staged_files=()
 staged_targets=()
 
@@ -66,7 +87,7 @@ commit_state() {
   local i
 
   for i in "${!staged_files[@]}"; do
-    mv -- "${staged_files[$i]}" "${staged_targets[$i]}"
+    mv -T -- "${staged_files[$i]}" "${staged_targets[$i]}"
   done
   staged_files=()
   staged_targets=()
@@ -90,8 +111,24 @@ jq_inputs() {
 # applied wallpapers, so each Previous step changes the desktop.
 RECENT_COLLAPSE='reduce .[] as $entry ([]; if length > 0 and .[-1].path == $entry.path then . else . + [$entry] end)'
 
+# Accepts only a wallpaper this helper downloaded into its cache, so state that
+# names any other file is never checked, restored, or applied.
+CACHED_WALLPAPER='def cached($cache): type == "object" and (.path | type) == "string"
+  and (.path | startswith($cache + "/"))
+  and (.path | ltrimstr($cache + "/") | test("^bing-[0-9]{8}-[A-Za-z0-9._-]{1,120}-(UHD|1920x1080)\\.jpg$"));'
+
+# Drops the oldest entries of a state list until it fits in STATE_MAX_BYTES with
+# its trailing newline, so the helper never saves a file it would then reject.
+FIT_STATE="until((tojson | utf8bytelength) < $STATE_MAX_BYTES; .[:-1])"
+
+# A preview only reads a regular, non-empty file within the download limit, never
+# a symlink, a FIFO, or an oversized image.
+previewable() {
+  [[ -f $1 && -s $1 && ! -L $1 ]] && (( $(stat -c %s -- "$1") <= IMAGE_MAX_BYTES ))
+}
+
 valid_jpeg() {
-  [[ -s $1 ]] && djpeg -strict -outfile /dev/null "$1" 2>/dev/null
+  previewable "$1" && djpeg -strict -outfile /dev/null "$1" 2>/dev/null
 }
 
 download_image() {
@@ -235,6 +272,15 @@ while (( $# > 0 )); do
       PREVIOUS=1
       shift
       ;;
+    --status)
+      STATUS=1
+      shift
+      ;;
+    --background)
+      [[ $# -ge 2 ]] || fail "--background requires a value"
+      BACKGROUND_LINK=$2
+      shift 2
+      ;;
     -h | --help)
       usage
       exit 0
@@ -252,13 +298,14 @@ done
 [[ $NETWORK_WAIT_SECONDS =~ ^[0-9]+$ ]] || fail "network wait must be an integer"
 (( NETWORK_WAIT_SECONDS <= 3600 )) || fail "network wait must be 0-3600 seconds"
 (( !PREVIOUS || APPLY )) || fail "--previous cannot be combined with --no-apply"
+(( !STATUS || (APPLY && !PREVIOUS) )) || fail "--status cannot be combined with --previous or --no-apply"
 
 require_command curl
 require_command djpeg
 require_command jq
 require_command shuf
 require_command flock
-if (( APPLY )); then require_command omarchy; fi
+if (( APPLY && !STATUS )); then require_command omarchy; fi
 
 CACHE_HOME=${XDG_CACHE_HOME:-"$HOME/.cache"}
 STATE_HOME=${XDG_STATE_HOME:-"$HOME/.local/state"}
@@ -268,26 +315,72 @@ CURRENT_FILE="$STATE_DIR/current.json"
 HISTORY_FILE="$STATE_DIR/history.json"
 RECENT_FILE="$STATE_DIR/recent.json"
 
-mkdir -p -- "$CACHE_DIR" "$STATE_DIR"
+# Reads the saved wallpaper and the applied wallpapers, newest first. That list is
+# the record Previous trusts, and it is always saved before current.json. The
+# current wallpaper only seeds it for state from earlier versions, which kept
+# current.json alone.
+load_state() {
+  current=$(read_state "$CURRENT_FILE" 2>/dev/null | one_json 'type == "object"' 2>/dev/null) || current='null'
+  if recent_file=$(read_state "$RECENT_FILE" 2>/dev/null | one_json 'type == "array"' 2>/dev/null); then
+    recent=$(jq -c --arg cache "$CACHE_DIR" "$CACHED_WALLPAPER [.[] | select(cached(\$cache))] | $RECENT_COLLAPSE" \
+      <<<"$recent_file")
+  else
+    recent=$(jq -c --arg cache "$CACHE_DIR" "$CACHED_WALLPAPER if cached(\$cache) then [.] else [] end" <<<"$current")
+  fi
+}
 
-# Serialize helpers so concurrent runs cannot overwrite each other's state.
-exec 9>"$STATE_DIR/.lock"
+# Prints everything the shell shows, so the shell never reads the state files or
+# the paths they name itself: the saved wallpaper, how many applied wallpapers
+# Previous can use, the wallpaper file if it can be previewed, whether the desktop
+# has a background, and that background when it is another previewable file.
+print_status() {
+  local path=""
+  local wallpaper=""
+  local wallpaper_file=""
+  local desktop=""
+  local external=""
+  local has_background=false
+
+  current='null'
+  recent='[]'
+  if [[ ! -L $STATE_DIR && ! -L $CACHE_DIR ]]; then
+    load_state
+    path=$(jq -r --arg cache "$CACHE_DIR" "$CACHED_WALLPAPER if cached(\$cache) then .path else \"\" end" <<<"$current")
+  fi
+  if [[ -n $path ]]; then
+    if previewable "$path"; then wallpaper=$path; fi
+    wallpaper_file=$(readlink -e -- "$path") || wallpaper_file=""
+  fi
+  if desktop=$(readlink -e -- "$BACKGROUND_LINK") && [[ -f $desktop && -s $desktop ]]; then
+    has_background=true
+    if [[ $desktop != "$wallpaper_file" ]] && previewable "$desktop"; then external=$desktop; fi
+  fi
+
+  printf '%s\n' "$current" "$recent" | jq -cn --arg cache "$CACHE_DIR" --arg wallpaper "$wallpaper" \
+    --arg external "$external" --argjson hasBackground "$has_background" "$CACHED_WALLPAPER
+    input as \$current | input as \$recent | {
+      current: (if \$current | cached(\$cache) then \$current else null end),
+      recentCount: (\$recent | length),
+      wallpaper: \$wallpaper,
+      external: \$external,
+      hasBackground: \$hasBackground
+    }"
+}
+
+if (( STATUS )); then
+  print_status
+  exit 0
+fi
+
+mkdir -p -- "$CACHE_DIR" "$STATE_DIR"
+[[ ! -L $CACHE_DIR && ! -L $STATE_DIR ]] || fail "the plugin cache and state directories must not be symlinks"
+
+# Serialize helpers so concurrent runs cannot overwrite each other's state. The
+# lock is held on the state directory itself, so no lock file can redirect it.
+exec 9<"$STATE_DIR"
 flock -w 300 9 || fail "another wallpaper update is still running"
 
-current='null'
-if [[ -s $CURRENT_FILE ]]; then
-  current=$(one_json 'type == "object"' <"$CURRENT_FILE" 2>/dev/null) || current='null'
-fi
-
-# Applied wallpapers, newest first. This list is the record Previous trusts, and
-# it is always saved before current.json. The current wallpaper only seeds it for
-# state from earlier versions, which kept current.json alone.
-if [[ -s $RECENT_FILE ]] && recent_file=$(one_json 'type == "array"' <"$RECENT_FILE" 2>/dev/null); then
-  recent=$(jq -c "[.[] | select(type == \"object\" and (.path | type) == \"string\")] | $RECENT_COLLAPSE" \
-    <<<"$recent_file")
-else
-  recent=$(jq -c 'if (.path | type) == "string" then [.] else [] end' <<<"$current")
-fi
+load_state
 
 if (( PREVIOUS )); then
   recent_count=$(jq 'length' <<<"$recent")
@@ -304,7 +397,7 @@ if (( PREVIOUS )); then
 
   changed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   next_recent=$(jq -c --argjson i "$restore_index" --arg changedAt "$changed_at" \
-    "[.[\$i] + {changedAt: \$changedAt, applied: true}] + .[\$i + 1:] | $RECENT_COLLAPSE" <<<"$recent")
+    "[.[\$i] + {changedAt: \$changedAt, applied: true}] + .[\$i + 1:] | $RECENT_COLLAPSE | $FIT_STATE" <<<"$recent")
   result=$(jq -c '.[0]' <<<"$next_recent")
   image_path=$(jq -r '.path' <<<"$result")
   stage_state "$RECENT_FILE" "$next_recent"
@@ -354,7 +447,7 @@ if older_archive=$(fetch_archive 7 2>/dev/null) && older_archive=$(archive_page 
 fi
 
 all_candidates=$(jq -c '
-  def text: if type == "string" then . else "" end;
+  def text: if type == "string" and length <= 1024 then . else "" end;
   [.images[]
     | select(type == "object")
     | select(.wp == null or .wp == true)
@@ -371,11 +464,8 @@ all_candidates=$(jq -c '
 
 (( $(jq 'length' <<<"$all_candidates") > 0 )) || fail "Bing returned no downloadable wallpapers"
 
-history='[]'
-if [[ -s $HISTORY_FILE ]]; then
-  history=$(one_json 'type == "array" and all(.[]; type == "string")' <"$HISTORY_FILE" 2>/dev/null) \
-    || history='[]'
-fi
+history=$(read_state "$HISTORY_FILE" 2>/dev/null \
+  | one_json 'type == "array" and all(.[]; type == "string")' 2>/dev/null) || history='[]'
 
 current_urlbase=$(jq -c '.[0].urlbase // ""' <<<"$recent")
 
@@ -416,7 +506,7 @@ if ! valid_jpeg "$image_path"; then
   partial=$(mktemp "$CACHE_DIR/.download.XXXXXX")
 
   if download_image "$image_url" "$partial" 2>/dev/null && valid_jpeg "$partial"; then
-    mv -- "$partial" "$image_path"
+    mv -T -- "$partial" "$image_path"
   else
     image_url=$fallback_image_url
     image_path="${image_base}-1920x1080.jpg"
@@ -424,7 +514,7 @@ if ! valid_jpeg "$image_path"; then
       download_image "$image_url" "$partial" \
         || fail "could not download the selected Bing wallpaper in UHD or 1920x1080"
       valid_jpeg "$partial" || fail "Bing returned a file that is not a JPEG image"
-      mv -- "$partial" "$image_path"
+      mv -T -- "$partial" "$image_path"
     fi
   fi
 fi
@@ -458,11 +548,10 @@ if (( APPLY )); then
   # Build every state update before changing the desktop, so a failure leaves
   # both the background and the saved state untouched.
   next_recent=$(jq_inputs "input as \$result | input as \$recent
-    | [\$result] + \$recent | $RECENT_COLLAPSE | .[:8]" "$result" "$recent")
-  next_history=$(jq_inputs '
-    input as $result | input as $previous
-    | ([$result.urlbase] + [$previous[] | select(. != $result.urlbase)])[:16]
-  ' "$result" "$history")
+    | [\$result] + \$recent | $RECENT_COLLAPSE | .[:8] | $FIT_STATE" "$result" "$recent")
+  next_history=$(jq_inputs "input as \$result | input as \$previous
+    | ([\$result.urlbase] + [\$previous[] | select(. != \$result.urlbase)])[:16] | $FIT_STATE
+  " "$result" "$history")
 
   stage_state "$RECENT_FILE" "$next_recent"
   stage_state "$CURRENT_FILE" "$result"

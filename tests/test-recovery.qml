@@ -46,7 +46,7 @@ ShellRoot {
         Qt.quit()
       } else {
         service.externalBackgroundPath = "stale"
-        service.checkBackground()
+        service.refreshStatus()
         backgroundTimer.start()
       }
     }
@@ -57,10 +57,19 @@ ShellRoot {
     interval: 50
     repeat: true
     onTriggered: {
-      var external = serviceLoader.item.externalBackgroundPath
+      var service = serviceLoader.item
+      var external = service.externalBackgroundPath
       if (external === "stale") return
+      stop()
       if (root.expectRecovery ? external !== "" : !/\/wallpaper\.jpg$/.test(external)) {
         console.error("TEST FAILURE: the panel background state is wrong:", external)
+        Qt.quit()
+        return
+      }
+      // Only the status that follows an update may change what the panel previews.
+      service.processSucceeded()
+      if (service.externalBackgroundPath !== external) {
+        console.error("TEST FAILURE: a finished update changed the preview before its status arrived")
       } else {
         console.log("service recovery test passed")
       }
