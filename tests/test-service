@@ -137,6 +137,12 @@ for recovery_case in missing replaced; do
   fi
 done
 
+# A zombie counts as stopped. CI job containers run `tail -f /dev/null` as PID 1,
+# which never reaps the orphans a timeout kills.
+process_running() {
+  [[ -r /proc/$1/status ]] && ! grep -q '^State:[[:space:]]*Z' "/proc/$1/status"
+}
+
 long_image="$CACHE_DIR/bing-20260803-$(printf 'L%.0s' {1..121})-UHD.jpg"
 cp -- "$TEST_DIR/fixtures/wallpaper.jpg" "$long_image"
 for bounds_case in symlink oversized fifo linked-dir foreign long-name \
@@ -202,7 +208,7 @@ for bounds_case in symlink oversized fifo linked-dir foreign long-name \
     exit 1
   fi
   [[ $status_mode != hang ]] || hang_pid=$status_log
-  if [[ -n $hang_pid ]] && kill -0 "$(cat -- "$hang_pid")" 2>/dev/null; then
+  if [[ -n $hang_pid ]] && process_running "$(cat -- "$hang_pid")"; then
     printf 'the timed-out helper left a process running\n' >&2
     exit 1
   fi
