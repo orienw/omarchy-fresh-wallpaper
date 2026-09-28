@@ -19,6 +19,7 @@ Item {
   // out, about 20 minutes.
   property int fetchTimeoutSeconds: 1500
   property int statusTimeoutSeconds: 10
+  property int statusRetrySeconds: 30
   // A status holds current.json, which the helper keeps under 256 KiB, and three paths.
   readonly property int statusMaxBytes: 278528
   property string currentBackgroundLink: home + "/.local/state/omarchy/current/background"
@@ -56,7 +57,10 @@ Item {
   property bool initialized: false
   property bool initializing: false
   property var currentWallpaper: ({})
-  property string lastError: ""
+  property string updateError: ""
+  property string statusError: ""
+  property int statusFailures: 0
+  readonly property string lastError: updateError || statusError
   property string lastTrigger: ""
   property int consecutiveFailures: 0
   property bool failureNotified: false
@@ -120,6 +124,7 @@ Item {
   // never applied.
   function refreshStatus() {
     if (sourceDir === "") return
+    statusRetryTimer.stop()
     statusProcess.command = [
       "timeout", String(statusTimeoutSeconds), "bash", "-c",
       'set -o pipefail; bash "$1" --status --background "$2" | head -c "$3"',
@@ -129,35 +134,49 @@ Item {
     else statusProcess.running = true
   }
 
-  // An unreadable status counts as no saved wallpaper.
+  // Only a successful status can establish that there is no saved wallpaper.
   function statusRead(raw) {
-    var status = ({})
+    var status
     try {
-      var parsed = JSON.parse(String(raw || ""))
-      if (parsed && typeof parsed === "object") status = parsed
+      status = JSON.parse(String(raw || ""))
+      if (!status || typeof status !== "object"
+          || !(status.current === null || (status.current && typeof status.current === "object"
+            && !Array.isArray(status.current)))) throw new Error("invalid wallpaper status")
     } catch (error) {
-      console.warn("fresh-wallpaper: could not read the wallpaper status")
+      if (statusFailures === 0) console.warn("fresh-wallpaper: could not read the wallpaper status")
+      statusFailures++
+      statusError = "Could not read wallpaper status"
+      statusRetryTimer.restart()
+      fetchSettling = false
+      if (awaitingInitialState) {
+        awaitingInitialState = false
+        finishInitialization(null)
+      }
+      return
     }
-    var current = status.current && typeof status.current === "object" ? status.current : null
+    statusError = ""
+    statusFailures = 0
+    var current = status.current
     if (current) currentWallpaper = current
     recentCount = Math.max(0, Math.floor(Number(status.recentCount)) || 0)
     previewWallpaperPath = String(status.wallpaper || "")
     externalBackgroundPath = String(status.external || "")
     fetchSettling = false
 
-    if (!awaitingInitialState) {
-      resolveStartup(hasCurrentWallpaper())
-      return
-    }
     // A saved wallpaper whose file is gone still counts while the desktop has a
     // background, which may have been chosen outside the plugin.
-    awaitingInitialState = false
-    finishInitialization(current !== null
-      && (runOnStart || previewWallpaperPath !== "" || status.hasBackground === true))
+    var hasWallpaper = current !== null
+      && (runOnStart || previewWallpaperPath !== "" || status.hasBackground === true)
+    if (awaitingInitialState || !startupResolved) {
+      awaitingInitialState = false
+      finishInitialization(hasWallpaper)
+    } else {
+      resolveStartup(hasCurrentWallpaper())
+    }
   }
 
   function finishInitialization(hasWallpaper) {
-    if (!hasWallpaper) currentWallpaper = ({})
+    if (hasWallpaper === false) currentWallpaper = ({})
     initialized = true
     initializing = false
     resolveStartup(hasWallpaper)
@@ -165,7 +184,7 @@ Item {
 
   function initialRefreshTrigger(hasWallpaper, changeOnStart) {
     if (changeOnStart) return "startup"
-    return hasWallpaper ? "" : "first-run"
+    return hasWallpaper === false ? "first-run" : ""
   }
 
   function hasCurrentWallpaper() {
@@ -204,6 +223,10 @@ Item {
     if (startupResolved) {
       if (hasWallpaper) cancelQueuedFirstRun()
       if (pendingStartupTrigger === "") armSchedule()
+      return
+    }
+    if (hasWallpaper === null && !runOnStart) {
+      armSchedule()
       return
     }
     startupResolved = true
@@ -257,6 +280,7 @@ Item {
     if (!initialized || sourceDir === "") return "not ready"
     if (fetchProcess.running) return "already running"
 
+    startupResolved = true
     cancelPendingStartupTrigger()
     return runHelper(trigger, [
       "--provider", provider,
@@ -275,7 +299,7 @@ Item {
 
   function runHelper(trigger, args) {
     lastTrigger = trigger
-    lastError = ""
+    updateError = ""
     fetchError = ""
     fetchProcess.command = [
       "timeout", "--kill-after=10", String(fetchTimeoutSeconds), "bash", helperPath
@@ -286,7 +310,7 @@ Item {
 
   function processSucceeded() {
     lastSuccessMs = Date.now()
-    lastError = ""
+    updateError = ""
     consecutiveFailures = 0
     failureNotified = false
     deferCount = 0
@@ -318,7 +342,7 @@ Item {
   function processExited(exitCode) {
     if (exitCode === 124) fetchError = "Wallpaper update timed out"
     if (exitCode === 0) processSucceeded()
-    else if (lastTrigger === "previous") lastError = errorDetail(fetchError)
+    else if (lastTrigger === "previous") updateError = errorDetail(fetchError)
     else if (exitCode === 75 && !isUserTrigger(lastTrigger)) processDeferred()
     else processFailed(fetchError || "Wallpaper update failed with exit code " + exitCode)
     // Even a failed run may have saved state before it stopped.
@@ -339,7 +363,7 @@ Item {
 
   function processFailed(message) {
     var detail = errorDetail(message)
-    lastError = detail
+    updateError = detail
     consecutiveFailures++
     queueRetry(15 * 60000)
     console.warn("fresh-wallpaper:", detail)
@@ -439,6 +463,12 @@ Item {
     Qt.callLater(armSchedule)
   }
   Component.onCompleted: Qt.callLater(initialize)
+
+  Timer {
+    id: statusRetryTimer
+    interval: Math.min(15 * 60, root.statusRetrySeconds * Math.pow(2, root.statusFailures - 1)) * 1000
+    onTriggered: root.refreshStatus()
+  }
 
   Timer {
     id: startupTimer

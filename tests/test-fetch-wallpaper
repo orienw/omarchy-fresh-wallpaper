@@ -448,7 +448,10 @@ for linked_dir in state cache; do
   ln -s -- "$plugin_dir.real" "$plugin_dir"
   : >"$TEST_APPLY_LOG"
   before=$(find "$plugin_dir.real" -printf '%P %s\n' | sort)
-  jq -e '.current == null and .recentCount == 0 and .wallpaper == ""' >/dev/null <<<"$(fetch --status)"
+  if fetch --status >/dev/null 2>&1; then
+    printf 'status accepted a symlinked %s directory\n' "$linked_dir" >&2
+    exit 1
+  fi
   if fetch >/dev/null 2>&1 || [[ -s $TEST_APPLY_LOG || $(find "$plugin_dir.real" -printf '%P %s\n' | sort) != "$before" ]]; then
     printf 'the helper used a symlinked %s directory\n' "$linked_dir" >&2
     exit 1

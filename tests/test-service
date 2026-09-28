@@ -149,13 +149,15 @@ process_running() {
 long_image="$CACHE_DIR/bing-20260803-$(printf 'L%.0s' {1..121})-UHD.jpg"
 cp -- "$TEST_DIR/fixtures/wallpaper.jpg" "$long_image"
 for bounds_case in symlink oversized fifo linked-dir foreign long-name \
-    status-hang status-noisy hang noisy; do
+    status-hang status-noisy status-error status-invalid status-empty status-missing \
+    status-manual status-scheduled status-backoff hang noisy; do
   bounds_dir="$BOUNDS_STATE/$bounds_case"
   bounds_state_dir="$bounds_dir/omarchy/fresh-wallpaper"
   hang_pid=""
   noise=0
   status_mode=""
   status_log=""
+  defer=0
   mkdir -p "$bounds_state_dir"
   jq -cn --arg path "$FRESH_WALLPAPER_TEST_IMAGE" --arg changedAt "$STATE_TIMESTAMP" \
     '{path: $path, changedAt: $changedAt}' >"$bounds_dir/trusted.json"
@@ -185,10 +187,19 @@ for bounds_case in symlink oversized fifo linked-dir foreign long-name \
       jq -cn --arg path "$untrusted_path" --arg changedAt "$STATE_TIMESTAMP" \
         '{path: $path, changedAt: $changedAt}' >"$bounds_state_dir/current.json"
       ;;
-    status-hang | status-noisy)
+    status-*)
       cp -- "$bounds_dir/trusted.json" "$bounds_state_dir/current.json"
       status_mode=${bounds_case#status-}
       status_log="$bounds_dir/status.log"
+      if [[ $bounds_case == status-empty || $bounds_case == status-manual || $bounds_case == status-scheduled ]]; then
+        rm -- "$bounds_state_dir/current.json"
+        status_mode=error
+        [[ $bounds_case == status-empty ]] || defer=1
+      elif [[ $bounds_case == status-missing ]]; then
+        jq --arg path "$CACHE_DIR/bing-20260801-Missing-UHD.jpg" '.path = $path' \
+          "$bounds_dir/trusted.json" >"$bounds_state_dir/current.json"
+        status_mode=error
+      fi
       ;;
     hang) hang_pid="$bounds_dir/sleep.pid" ;;
     noisy) noise=1 ;;
@@ -202,6 +213,7 @@ for bounds_case in symlink oversized fifo linked-dir foreign long-name \
     FRESH_WALLPAPER_TEST_NOISE="$noise" \
     FRESH_WALLPAPER_TEST_STATUS="$status_mode" \
     FRESH_WALLPAPER_TEST_STATUS_LOG="$status_log" \
+    FRESH_WALLPAPER_TEST_DEFER="$defer" \
     QT_QPA_PLATFORM=offscreen \
       quickshell --no-color -p "$TEST_DIR/test-bounds.qml" 2>&1
   )
@@ -209,6 +221,10 @@ for bounds_case in symlink oversized fifo linked-dir foreign long-name \
   if ! grep -q 'service bounds test passed' <<<"$bounds_output"; then
     printf '%s\n' "$bounds_output" >&2
     exit 1
+  fi
+  if [[ $bounds_case == status-backoff ]]; then
+    [[ $(cat "$status_log") -eq 3 ]]
+    [[ $(grep -c 'could not read the wallpaper status' <<<"$bounds_output") -eq 1 ]]
   fi
   [[ $status_mode != hang ]] || hang_pid=$status_log
   if [[ -n $hang_pid ]] && process_running "$(cat -- "$hang_pid")"; then

@@ -378,6 +378,8 @@ print_status() {
   if open_storage 2>/dev/null; then
     load_state
     path=$(jq -r --arg cache "$CACHE_DIR" "$CACHED_WALLPAPER if cached(\$cache) then .path else \"\" end" <<<"$current")
+  elif [[ -e $STATE_DIR || -L $STATE_DIR || -L $CACHE_DIR ]]; then
+    fail "could not open the plugin cache or state directory safely"
   fi
   if (( cache_open )) && [[ -n $path ]]; then
     if previewable "$CACHE_FILES/${path##*/}"; then wallpaper=$path; fi

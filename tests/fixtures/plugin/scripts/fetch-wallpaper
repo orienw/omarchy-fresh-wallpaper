@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 
-# The real helper answers --status. Only the first status request misbehaves when
-# a test asks for it, so the service can recover afterwards.
+# The real helper answers --status after any requested transient failures.
 if [[ ${1:-} == --status ]]; then
+  if [[ ${FRESH_WALLPAPER_TEST_STATUS:-} == backoff ]]; then
+    attempts=$(cat "$FRESH_WALLPAPER_TEST_STATUS_LOG" 2>/dev/null || printf 0)
+    printf '%s\n' "$((attempts + 1))" >"$FRESH_WALLPAPER_TEST_STATUS_LOG"
+    (( attempts >= 2 )) || exit 1
+  fi
   if [[ -n ${FRESH_WALLPAPER_TEST_STATUS_LOG:-} && ! -e $FRESH_WALLPAPER_TEST_STATUS_LOG ]]; then
     case ${FRESH_WALLPAPER_TEST_STATUS:-} in
       hang)
@@ -13,6 +17,15 @@ if [[ ${1:-} == --status ]]; then
       noisy)
         : >"$FRESH_WALLPAPER_TEST_STATUS_LOG"
         head -c 1000000 /dev/zero | tr '\0' ' '
+        ;;
+      error)
+        : >"$FRESH_WALLPAPER_TEST_STATUS_LOG"
+        exit 1
+        ;;
+      invalid)
+        : >"$FRESH_WALLPAPER_TEST_STATUS_LOG"
+        printf '{}\n'
+        exit 0
         ;;
     esac
   fi

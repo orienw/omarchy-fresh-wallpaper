@@ -144,7 +144,7 @@ ShellRoot {
       service.retryAfterMs = 0
       service.consecutiveFailures = 0
       service.failureNotified = false
-      service.lastError = ""
+      service.updateError = ""
       service.lastTrigger = "schedule"
       service.processDeferred()
       var deferRemaining = service.scheduledAtMs() - Date.now()
@@ -180,9 +180,23 @@ ShellRoot {
       }
       service.retryAfterMs = 0
       service.deferCount = 0
-      service.lastError = ""
+      service.updateError = ""
       service.lastTrigger = ""
       service.statusRead(JSON.stringify({current: {path: root.existingWallpaperPath, changedAt: new Date().toISOString()}}))
+
+      service.updateError = "an earlier update failed"
+      service.statusRead("{}")
+      if (service.statusError === "" || service.lastError !== "an earlier update failed"
+          || service.currentWallpaper.path !== root.existingWallpaperPath) {
+        root.fail("a failed status hid the update error or discarded the wallpaper")
+        return
+      }
+      service.statusRead(JSON.stringify({current: service.currentWallpaper}))
+      if (service.statusError !== "" || service.lastError !== "an earlier update failed") {
+        root.fail("status recovery did not preserve the update error")
+        return
+      }
+      service.updateError = ""
 
       if (service.normalizedInterval(525601) !== 525600) {
         root.fail("custom interval maximum was not enforced")
@@ -261,7 +275,7 @@ ShellRoot {
         root.fail("a failed Previous queued a retry or notification")
         return
       }
-      service.lastError = ""
+      service.updateError = ""
       service.recentCount = 0
       service.lastTrigger = ""
       service.armSchedule()
