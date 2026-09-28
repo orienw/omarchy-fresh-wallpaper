@@ -249,7 +249,7 @@ cat >"$TEST_TMP/interrupted-save/bin/mv" <<MV
 #!/bin/sh
 for target; do :; done
 case "\$target" in
-  */omarchy/fresh-wallpaper/*.json)
+  */recent.json | */current.json | */history.json)
     count=\$(( \$(cat "\$TEST_MV_COUNT" 2>/dev/null || echo 0) + 1 ))
     echo "\$count" >"\$TEST_MV_COUNT"
     [ "\$count" -ne 2 ] || exit 1
@@ -495,6 +495,14 @@ rm -f -- "${picks[1]}"
 truncate -s 60M -- "${picks[1]}"
 jq -e '.wallpaper == "" and .external == ""' >/dev/null <<<"$(status)"
 
+use_case missing-cache-status
+saved=$(fetch)
+rm -r -- "$XDG_CACHE_HOME"
+jq -e --arg path "$(jq -r '.path' <<<"$saved")" --arg external "$TEST_FIXTURE_DIR/wallpaper.jpg" \
+  '.current.path == $path and .recentCount == 1 and .wallpaper == "" and .external == $external and .hasBackground' \
+  >/dev/null <<<"$(fetch --status --background "$TEST_FIXTURE_DIR/wallpaper.jpg")"
+[[ ! -e $XDG_CACHE_HOME ]]
+
 # A download never lands inside a directory that a cache symlink points to.
 use_case linked-download
 export TEST_BING_FIXTURE=bing-single.json
@@ -623,5 +631,8 @@ if [[ $offline_status -ne 75 ]]; then
   printf 'offline fetch exited %s, expected 75\n' "$offline_status" >&2
   exit 1
 fi
+
+unset TEST_OFFLINE
+"$PROJECT_DIR/tests/test-storage-races"
 
 printf 'fetch-wallpaper tests passed\n'

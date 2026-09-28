@@ -111,10 +111,12 @@ if ! grep -q "service offline deferral test passed" <<<"$offline_output"; then
   exit 1
 fi
 
-for recovery_case in missing replaced; do
+for recovery_case in missing replaced missing-cache; do
   recovery_dir="$RECOVERY_STATE/$recovery_case"
+  recovery_cache="$TEST_CACHE"
+  [[ $recovery_case != missing-cache ]] || recovery_cache="$recovery_dir/cache"
   mkdir -p "$recovery_dir/omarchy/fresh-wallpaper"
-  deleted_path="$CACHE_DIR/bing-20200101-Deleted_EN-US0000000000-UHD.jpg"
+  deleted_path="$recovery_cache/omarchy/fresh-wallpaper/bing-20200101-Deleted_EN-US0000000000-UHD.jpg"
   jq -cn --arg path "$deleted_path" --arg changedAt "$STATE_TIMESTAMP" \
     '{path: $path, changedAt: $changedAt}' >"$recovery_dir/omarchy/fresh-wallpaper/current.json"
   if [[ $recovery_case == missing ]]; then
@@ -126,6 +128,7 @@ for recovery_case in missing replaced; do
     WAYLAND_DISPLAY= \
     XDG_RUNTIME_DIR="$TEST_RUNTIME" \
     XDG_STATE_HOME="$recovery_dir" \
+    XDG_CACHE_HOME="$recovery_cache" \
     FRESH_WALLPAPER_TEST_BACKGROUND="$recovery_dir/background" \
     FRESH_WALLPAPER_TEST_RECOVERY="$recovery_case" \
     QT_QPA_PLATFORM=offscreen \

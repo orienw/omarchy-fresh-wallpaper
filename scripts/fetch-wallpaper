@@ -13,8 +13,8 @@ VERSION="0.1.6"
 NETWORK_WAIT_SECONDS=60
 ARCHIVE_MAX_BYTES=2097152
 IMAGE_MAX_BYTES=52428800
-# Service.qml reads state files with the same limit. Capped metadata keeps them
-# far below it, and FIT_STATE trims anything older that would not fit.
+# Capped metadata keeps state files far below this limit, and FIT_STATE trims
+# anything older that would not fit.
 STATE_MAX_BYTES=262144
 
 usage() {
@@ -46,6 +46,35 @@ network_unavailable() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1"
+}
+
+# Open first, then match the handle against stat without following a final
+# symlink. The trailing /. rejects FIFOs and devices without opening them.
+# Once verified, only the handle is used, so later pathname swaps are harmless.
+pin_directory() {
+  local expected opened
+
+  exec {opened}<"$1/." || return 1
+  if expected=$(stat -Lc '%d:%i' -- "/proc/self/fd/$opened") \
+      && [[ $expected == "$(stat -c '%d:%i' -- "$1")" ]]; then
+    directory_fd=$opened
+  else
+    exec {opened}<&-
+    return 1
+  fi
+}
+
+open_storage() {
+  cache_open=0
+  pin_directory "$STATE_DIR" || return 1
+  exec 9<&"$directory_fd" {directory_fd}<&-
+  if pin_directory "$CACHE_DIR"; then
+    exec 8<&"$directory_fd" {directory_fd}<&-
+    cache_open=1
+  else
+    # A cleared cache does not invalidate saved metadata or an external background.
+    (( STATUS )) && [[ ! -e $CACHE_DIR && ! -L $CACHE_DIR ]]
+  fi
 }
 
 # Prints the JSON on stdin if it is exactly one document satisfying the jq
@@ -220,14 +249,14 @@ prune_cache() {
   local keep_count=$CACHE_LIMIT
 
   mapfile -d '' -t entries < <(
-    find "$CACHE_DIR" -maxdepth 1 -type f -name 'bing-*.jpg' -printf '%T@\t%p\0' | sort -z -nr
+    find "$CACHE_FILES/." -maxdepth 1 -type f -name 'bing-*.jpg' -printf '%T@\t%f\0' | sort -z -nr
   )
 
   for entry in "${entries[@]}"; do
     path=${entry#*$'\t'}
     is_protected=0
     for candidate in "${protected[@]}"; do
-      [[ $candidate != "$path" ]] || is_protected=1
+      [[ ${candidate##*/} != "$path" ]] || is_protected=1
     done
     if (( is_protected )); then
       keep_count=$((keep_count - 1))
@@ -238,7 +267,7 @@ prune_cache() {
 
   (( keep_count >= 0 )) || keep_count=0
   for path in "${others[@]:keep_count}"; do
-    rm -f -- "$path"
+    rm -f -- "$CACHE_FILES/$path"
   done
 }
 
@@ -311,9 +340,12 @@ CACHE_HOME=${XDG_CACHE_HOME:-"$HOME/.cache"}
 STATE_HOME=${XDG_STATE_HOME:-"$HOME/.local/state"}
 CACHE_DIR="$CACHE_HOME/omarchy/fresh-wallpaper"
 STATE_DIR="$STATE_HOME/omarchy/fresh-wallpaper"
-CURRENT_FILE="$STATE_DIR/current.json"
-HISTORY_FILE="$STATE_DIR/history.json"
-RECENT_FILE="$STATE_DIR/recent.json"
+# Keep public image paths stable, but do filesystem work through the open
+# directories. Renaming them or replacing an ancestor cannot redirect a write.
+CACHE_FILES=/proc/self/fd/8
+CURRENT_FILE=/proc/self/fd/9/current.json
+HISTORY_FILE=/proc/self/fd/9/history.json
+RECENT_FILE=/proc/self/fd/9/recent.json
 
 # Reads the saved wallpaper and the applied wallpapers, newest first. That list is
 # the record Previous trusts, and it is always saved before current.json. The
@@ -343,13 +375,13 @@ print_status() {
 
   current='null'
   recent='[]'
-  if [[ ! -L $STATE_DIR && ! -L $CACHE_DIR ]]; then
+  if open_storage 2>/dev/null; then
     load_state
     path=$(jq -r --arg cache "$CACHE_DIR" "$CACHED_WALLPAPER if cached(\$cache) then .path else \"\" end" <<<"$current")
   fi
-  if [[ -n $path ]]; then
-    if previewable "$path"; then wallpaper=$path; fi
-    wallpaper_file=$(readlink -e -- "$path") || wallpaper_file=""
+  if (( cache_open )) && [[ -n $path ]]; then
+    if previewable "$CACHE_FILES/${path##*/}"; then wallpaper=$path; fi
+    wallpaper_file=$(readlink -e -- "$CACHE_FILES/${path##*/}") || wallpaper_file=""
   fi
   if desktop=$(readlink -e -- "$BACKGROUND_LINK") && [[ -f $desktop && -s $desktop ]]; then
     has_background=true
@@ -373,11 +405,10 @@ if (( STATUS )); then
 fi
 
 mkdir -p -- "$CACHE_DIR" "$STATE_DIR"
-[[ ! -L $CACHE_DIR && ! -L $STATE_DIR ]] || fail "the plugin cache and state directories must not be symlinks"
+open_storage || fail "the plugin cache or state directory is a symlink or changed while opening"
 
 # Serialize helpers so concurrent runs cannot overwrite each other's state. The
-# lock is held on the state directory itself, so no lock file can redirect it.
-exec 9<"$STATE_DIR"
+# lock and every state operation use the same directory, even after a rename.
 flock -w 300 9 || fail "another wallpaper update is still running"
 
 load_state
@@ -388,7 +419,7 @@ if (( PREVIOUS )); then
   restore_index=""
   for ((i = 1; i < recent_count; i++)); do
     candidate_path=$(jq -r --argjson i "$i" '.[$i].path' <<<"$recent")
-    if [[ $candidate_path != "$current_path" ]] && valid_jpeg "$candidate_path"; then
+    if [[ $candidate_path != "$current_path" ]] && valid_jpeg "$CACHE_FILES/${candidate_path##*/}"; then
       restore_index=$i
       break
     fi
@@ -402,8 +433,8 @@ if (( PREVIOUS )); then
   image_path=$(jq -r '.path' <<<"$result")
   stage_state "$RECENT_FILE" "$next_recent"
   stage_state "$CURRENT_FILE" "$result"
-  omarchy theme bg set "$image_path" 9>&-
-  touch -- "$image_path"
+  omarchy theme bg set "$image_path" 8<&- 9<&-
+  touch -h -- "$CACHE_FILES/${image_path##*/}"
   commit_state
   printf '%s\n' "$result"
   exit 0
@@ -499,25 +530,26 @@ slug=${slug%-}
 
 image_url="https://www.bing.com${urlbase}_UHD.jpg"
 fallback_image_url="https://www.bing.com${urlbase}_1920x1080.jpg"
-image_base="$CACHE_DIR/bing-${start_date}-${slug}"
-image_path="${image_base}-UHD.jpg"
+image_base="$CACHE_FILES/bing-${start_date}-${slug}"
+image_file="${image_base}-UHD.jpg"
 
-if ! valid_jpeg "$image_path"; then
-  partial=$(mktemp "$CACHE_DIR/.download.XXXXXX")
+if ! valid_jpeg "$image_file"; then
+  partial=$(mktemp "$CACHE_FILES/.download.XXXXXX")
 
   if download_image "$image_url" "$partial" 2>/dev/null && valid_jpeg "$partial"; then
-    mv -T -- "$partial" "$image_path"
+    mv -T -- "$partial" "$image_file"
   else
     image_url=$fallback_image_url
-    image_path="${image_base}-1920x1080.jpg"
-    if ! valid_jpeg "$image_path"; then
+    image_file="${image_base}-1920x1080.jpg"
+    if ! valid_jpeg "$image_file"; then
       download_image "$image_url" "$partial" \
         || fail "could not download the selected Bing wallpaper in UHD or 1920x1080"
       valid_jpeg "$partial" || fail "Bing returned a file that is not a JPEG image"
-      mv -T -- "$partial" "$image_path"
+      mv -T -- "$partial" "$image_file"
     fi
   fi
 fi
+image_path="$CACHE_DIR/${image_file##*/}"
 
 changed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 result=$(jq -c \
@@ -556,8 +588,8 @@ if (( APPLY )); then
   stage_state "$RECENT_FILE" "$next_recent"
   stage_state "$CURRENT_FILE" "$result"
   stage_state "$HISTORY_FILE" "$next_history"
-  omarchy theme bg set "$image_path" 9>&-
-  touch -- "$image_path"
+  omarchy theme bg set "$image_path" 8<&- 9<&-
+  touch -h -- "$CACHE_FILES/${image_path##*/}"
   commit_state
 
   mapfile -d '' -t protected_paths < <(jq -j '.[] | .path + "\u0000"' <<<"$next_recent")

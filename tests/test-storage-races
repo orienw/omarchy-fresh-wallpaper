@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+PROJECT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+HELPER=${1:-"$PROJECT_DIR/scripts/fetch-wallpaper"}
+TEST_ROOT=$(mktemp -d)
+trap 'rm -rf -- "$TEST_ROOT"' EXIT
+
+export PATH="$PROJECT_DIR/tests/mocks:$PATH"
+export TEST_FIXTURE_DIR="$PROJECT_DIR/tests/fixtures"
+mkdir "$TEST_ROOT/bin"
+
+# Intercept real operations so swaps land exactly between opening and checking,
+# after locking, after creating a temporary file, or before commit/cleanup.
+cat >"$TEST_ROOT/bin/swap-tool" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+
+swap_directory() {
+  [[ ! -e $TEST_SWAP_BEFORE ]] || return 0
+  mv -- "$TEST_SWAP_PATH" "$TEST_SWAP_PATH.saved"
+  cp -a -- "$TEST_SWAP_PATH.saved/." "$TEST_SWAP_OUTSIDE/"
+  if [[ $TEST_SWAP_PHASE == read ]]; then
+    replacement="$TEST_SWAP_OUTSIDE${TEST_SWAP_DIRECTORY#"$TEST_SWAP_PATH"}"
+    if [[ $TEST_SWAP_STORAGE == state ]]; then
+      printf 'null\n' >"$replacement/current.json"
+      printf '[]\n' >"$replacement/recent.json"
+    else
+      find "$replacement" -name '*.jpg' -exec truncate -s 0 -- {} +
+    fi
+  fi
+  cp -a -- "$TEST_SWAP_OUTSIDE" "$TEST_SWAP_COPY"
+  find "$TEST_SWAP_OUTSIDE" -printf '%P %y %s %T@\n' | sort >"$TEST_SWAP_BEFORE"
+  ln -s -- "$TEST_SWAP_OUTSIDE" "$TEST_SWAP_PATH"
+}
+
+case "$TEST_SWAP_PHASE" in
+  open)
+    if [[ ${*: -1} == "$TEST_SWAP_DIRECTORY" ]]; then swap_directory; fi
+    exec "$TEST_SWAP_COMMAND" "$@"
+    ;;
+  lock)
+    "$TEST_SWAP_COMMAND" "$@"
+    swap_directory
+    ;;
+  stage | download-failure)
+    output=$("$TEST_SWAP_COMMAND" "$@")
+    if [[ $output == *"$TEST_SWAP_TEMP"* ]]; then swap_directory; fi
+    printf '%s\n' "$output"
+    ;;
+  read)
+    swap_directory
+    exec "$TEST_SWAP_COMMAND" "$@"
+    ;;
+  commit | cleanup)
+    swap_directory
+    [[ $TEST_SWAP_PHASE != cleanup ]] || exit 1
+    exec "$TEST_SWAP_COMMAND" "$@"
+    ;;
+esac
+MOCK
+chmod +x "$TEST_ROOT/bin/swap-tool"
+
+fetch() { "$HELPER" "$@"; }
+
+count=0
+for storage in state cache; do
+  for ancestor in directory parent; do
+    for phase in lock stage commit cleanup open read download-failure; do
+      for operation in refresh previous; do
+        # Previous does not download or stage an image.
+        [[ $storage != cache || $phase != stage || $operation != previous ]] || continue
+        [[ $phase != read || $operation != previous ]] || continue
+        [[ $phase != download-failure || ( $storage == cache && $operation == refresh ) ]] || continue
+        name="$storage-$ancestor-$phase-$operation"
+        case_dir="$TEST_ROOT/$name"
+        export XDG_STATE_HOME="$case_dir/state" XDG_CACHE_HOME="$case_dir/cache"
+        export TEST_APPLY_LOG="$case_dir/applied"
+        mkdir -p "$case_dir"
+        fetch >/dev/null
+        fetch >/dev/null
+
+        # Pruning must also stay in the original cache after a swap.
+        for i in {1..8}; do
+          printf 'cached\n' >"$XDG_CACHE_HOME/omarchy/fresh-wallpaper/bing-extra-$i.jpg"
+        done
+
+        export TEST_SWAP_DIRECTORY="$case_dir/$storage/omarchy/fresh-wallpaper"
+        export TEST_SWAP_PATH="$TEST_SWAP_DIRECTORY"
+        [[ $ancestor != parent ]] || TEST_SWAP_PATH=${TEST_SWAP_PATH%/*}
+        export TEST_SWAP_OUTSIDE="$case_dir/outside" TEST_SWAP_COPY="$case_dir/copy"
+        export TEST_SWAP_BEFORE="$case_dir/before" TEST_SWAP_PHASE="$phase"
+        export TEST_SWAP_STORAGE="$storage"
+        export TEST_SWAP_TEMP=recent.json.tmp.
+        [[ $storage != cache ]] || TEST_SWAP_TEMP=.download.
+        mkdir "$TEST_SWAP_OUTSIDE" "$case_dir/bin"
+
+        case "$phase" in
+          open) tool=stat ;;
+          lock) tool=flock ;;
+          stage | download-failure) tool=mktemp ;;
+          commit | cleanup) tool=omarchy ;;
+          read) tool=dd ;;
+        esac
+        export TEST_SWAP_COMMAND
+        TEST_SWAP_COMMAND=$(command -v "$tool")
+        ln -s "$TEST_ROOT/bin/swap-tool" "$case_dir/bin/$tool"
+        args=(--cache-limit 8)
+        [[ $operation != previous ]] || args+=(--previous)
+        if [[ $phase == read ]]; then
+          args=(--status --background "$case_dir/background")
+          fetch "${args[@]}" >"$case_dir/expected"
+        fi
+        fixture=wallpaper.jpg
+        [[ $phase != download-failure ]] || fixture=truncated.jpg
+        result=0
+        TEST_IMAGE_FIXTURE="$fixture" PATH="$case_dir/bin:$PATH" \
+          fetch "${args[@]}" >"$case_dir/result" 2>"$case_dir/error" || result=$?
+
+        if [[ ! -f $TEST_SWAP_BEFORE ]]; then
+          printf '%s: the directory swap did not run\n' "$name" >&2
+          cat "$case_dir/error" >&2
+          exit 1
+        fi
+        find "$TEST_SWAP_OUTSIDE" -printf '%P %y %s %T@\n' | sort >"$case_dir/after"
+        if ! cmp -s "$TEST_SWAP_BEFORE" "$case_dir/after" || ! diff -qr "$TEST_SWAP_COPY" "$TEST_SWAP_OUTSIDE" >/dev/null; then
+          printf '%s: the helper changed files outside the pinned directory\n' "$name" >&2
+          diff -u "$TEST_SWAP_BEFORE" "$case_dir/after" >&2 || true
+          exit 1
+        fi
+        if [[ $phase == open || $phase == cleanup || $phase == download-failure ]]; then
+          [[ $result -ne 0 ]] || { printf '%s: the helper should have failed\n' "$name" >&2; exit 1; }
+        elif [[ $phase == read ]]; then
+          [[ $result -eq 0 ]]
+          cmp -s "$case_dir/result" "$case_dir/expected"
+        else
+          [[ $result -eq 0 ]] || { cat "$case_dir/error" >&2; exit 1; }
+          saved_state="$XDG_STATE_HOME/omarchy/fresh-wallpaper"
+          if [[ $storage == state ]]; then
+            saved_state="$TEST_SWAP_PATH.saved${TEST_SWAP_DIRECTORY#"$TEST_SWAP_PATH"}"
+          fi
+          cmp -s "$case_dir/result" "$saved_state/current.json"
+        fi
+        saved_directory="$TEST_SWAP_PATH.saved${TEST_SWAP_DIRECTORY#"$TEST_SWAP_PATH"}"
+        [[ -z $(find "$saved_directory" -name '*.tmp.*' -o -name '.download.*') ]]
+        count=$((count + 1))
+      done
+    done
+  done
+done
+
+printf 'Storage race tests passed (%s cases)\n' "$count"
