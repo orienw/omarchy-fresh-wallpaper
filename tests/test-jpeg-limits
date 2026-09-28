@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+PROJECT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+HELPER=${1:-"$PROJECT_DIR/scripts/fetch-wallpaper"}
+TEST_ROOT=$(mktemp -d)
+trap 'rm -rf -- "$TEST_ROOT"' EXIT
+export TEST_FIXTURE_DIR="$TEST_ROOT"
+cp "$PROJECT_DIR/tests/fixtures/"{bing.json,wallpaper.jpg} "$TEST_ROOT/"
+
+jpegtran -progressive -outfile "$TEST_ROOT/huge.jpg" "$TEST_ROOT/wallpaper.jpg"
+python3 - "$TEST_ROOT" <<'PYTHON'
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1])
+image = root / "huge.jpg"
+data = bytearray(image.read_bytes())
+frame = data.index(b"\xff\xc2")
+data[frame + 5:frame + 9] = (65500).to_bytes(2, "big") * 2
+image.write_bytes(data)
+(root / "scan-script").write_text("0 1 2: 0 0 0 0;\n" + "".join(
+    f"{component}: {start} {min(start + 1, 63)} 0 0;\n"
+    for component in range(3) for start in range(1, 64, 2)
+))
+PYTHON
+jpegtran -scans "$TEST_ROOT/scan-script" -outfile "$TEST_ROOT/scans.jpg" "$TEST_ROOT/wallpaper.jpg"
+
+# Keep a regression safe to run: the decoder must hit its own limit before this
+# address-space ceiling, which prevents an unbounded decoder allocating gigabytes.
+export TEST_REAL_DJPEG
+TEST_REAL_DJPEG=$(command -v djpeg)
+export TEST_DJPEG_LOG="$TEST_ROOT/decoder.log"
+mkdir "$TEST_ROOT/bin"
+cat >"$TEST_ROOT/bin/djpeg" <<'SH'
+#!/usr/bin/env bash
+ulimit -v 262144
+exec "$TEST_REAL_DJPEG" "$@" 2>"$TEST_DJPEG_LOG"
+SH
+chmod +x "$TEST_ROOT/bin/djpeg"
+export PATH="$TEST_ROOT/bin:$PROJECT_DIR/tests/mocks:$PATH"
+
+reject_image() {
+  local result=0
+  timeout 10 "$HELPER" "$@" >"$TEST_ROOT/result" 2>"$TEST_ROOT/error" || result=$?
+  if (( result == 0 || result == 124 )) || [[ -s $TEST_APPLY_LOG ]] \
+      || ! grep -Fq "$expected_error" "$TEST_DJPEG_LOG"; then
+    printf '%s %s: JPEG resource limit was not enforced (exit %s)\n' "$kind" "$*" "$result" >&2
+    cat "$TEST_DJPEG_LOG" "$TEST_ROOT/error" >&2
+    exit 1
+  fi
+}
+
+for kind in huge scans; do
+  export XDG_STATE_HOME="$TEST_ROOT/$kind/state" XDG_CACHE_HOME="$TEST_ROOT/$kind/cache"
+  export TEST_APPLY_LOG="$TEST_ROOT/$kind/applied"
+  expected_error='Memory limit exceeded'
+  [[ $kind != scans ]] || expected_error='exceeds maximum scans'
+  TEST_IMAGE_FIXTURE="$kind.jpg" reject_image
+
+  previous=$("$HELPER" | jq -r '.path')
+  "$HELPER" >/dev/null
+  : >"$TEST_APPLY_LOG"
+  cp "$TEST_ROOT/$kind.jpg" "$previous"
+  cp "$XDG_STATE_HOME/omarchy/fresh-wallpaper/current.json" "$TEST_ROOT/before.json"
+  reject_image --previous
+  cmp "$TEST_ROOT/before.json" "$XDG_STATE_HOME/omarchy/fresh-wallpaper/current.json"
+done
+
+# A full-resolution, full-chroma progressive UHD image must still decode.
+python3 - <<'PYTHON' | cjpeg -sample 1x1 -progressive -outfile "$TEST_ROOT/uhd.jpg"
+import sys
+sys.stdout.buffer.write(b"P6\n3840 2160\n255\n")
+for _ in range(2160):
+    sys.stdout.buffer.write(b"\x30\x60\x90" * 3840)
+PYTHON
+TEST_IMAGE_FIXTURE=uhd.jpg "$HELPER" --no-apply >/dev/null
+
+printf 'JPEG resource-limit tests passed\n'

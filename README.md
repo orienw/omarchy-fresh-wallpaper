@@ -34,7 +34,7 @@ Other providers can be added behind the existing `provider` setting without chan
 - Omarchy 4.0 or newer
 - `curl`
 - `jq`
-- `djpeg` (from `libjpeg-turbo`)
+- `djpeg` (from `libjpeg-turbo` 2.1 or newer)
 - GNU core utilities
 - `flock` (from `util-linux`)
 - Python 3 (standard library only)
@@ -130,7 +130,7 @@ These commands persist settings in the plugin's existing entry in `~/.config/oma
 
 Fresh Wallpaper makes HTTPS requests to `www.bing.com`. Redirects are restricted to HTTPS. Archive responses are capped at 2 MiB and wallpaper downloads at 50 MiB. Automatic updates wait for NetworkManager and a successful HTTPS probe before downloading, then retry quietly if the machine is still offline. It stores downloaded images under `${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/fresh-wallpaper/` and rotation metadata under `${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/fresh-wallpaper/`.
 
-The helper fully decodes each JPEG before changing the desktop, rejecting incomplete or corrupt downloads and cache entries. A failed request leaves the current Omarchy background untouched.
+The helper fully decodes each JPEG before changing the desktop, rejecting incomplete or corrupt downloads and cache entries. Decoding uses libjpeg's 64 MB memory limit and allows at most 64 scans per image. A failed request leaves the current Omarchy background untouched.
 
 The Omarchy shell asks the helper for saved metadata and preview paths instead of reading state files itself. The helper only reads state files that are regular files, never through a symlink or from a FIFO, ignores any over 256 KiB, and only trusts wallpapers it saved in its own cache directory. A status only names images checked to be regular files within the 50 MiB download limit, and the helper refuses to run if its cache or state directory is a symlink. Each update has a 25-minute deadline and each status request a 10-second one, and the shell caps how much of the helper's output it keeps.
 

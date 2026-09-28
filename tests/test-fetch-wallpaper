@@ -638,5 +638,6 @@ fi
 unset TEST_OFFLINE
 "$PROJECT_DIR/tests/test-storage-races"
 "$PROJECT_DIR/tests/test-temp-files"
+"$PROJECT_DIR/tests/test-jpeg-limits"
 
 printf 'fetch-wallpaper tests passed\n'

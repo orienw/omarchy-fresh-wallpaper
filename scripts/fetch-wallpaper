@@ -156,7 +156,7 @@ previewable() {
 }
 
 valid_jpeg() {
-  previewable "$1" && djpeg -strict -outfile /dev/null "$1" 2>/dev/null
+  previewable "$1" && djpeg -strict -maxmemory 64m -maxscans 64 -outfile /dev/null "$1" 2>/dev/null
 }
 
 download_image() {
