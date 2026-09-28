@@ -413,6 +413,14 @@ open_storage || fail "the plugin cache or state directory is a symlink or change
 # lock and every state operation use the same directory, even after a rename.
 flock -w 300 9 || fail "another wallpaper update is still running"
 
+# Remove interrupted writes while holding the update lock. Leave directories
+# alone, and never follow a leftover symlink.
+find "$CACHE_FILES/." -maxdepth 1 -name '.download.*' ! -type d -delete \
+  || fail "could not remove interrupted downloads"
+find /proc/self/fd/9/. -maxdepth 1 \
+  \( -name 'current.json.tmp.*' -o -name 'recent.json.tmp.*' -o -name 'history.json.tmp.*' \) \
+  ! -type d -delete || fail "could not remove interrupted state writes"
+
 load_state
 
 if (( PREVIOUS )); then

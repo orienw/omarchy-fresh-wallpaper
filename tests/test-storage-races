@@ -94,6 +94,9 @@ for storage in state cache; do
         export TEST_SWAP_STORAGE="$storage"
         export TEST_SWAP_TEMP=recent.json.tmp.
         [[ $storage != cache ]] || TEST_SWAP_TEMP=.download.
+        if [[ $phase == lock ]]; then
+          printf 'unfinished\n' >"$TEST_SWAP_DIRECTORY/${TEST_SWAP_TEMP}stale"
+        fi
         mkdir "$TEST_SWAP_OUTSIDE" "$case_dir/bin"
 
         case "$phase" in

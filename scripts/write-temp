@@ -13,6 +13,7 @@ def interrupted(signum, frame):
 
 
 signal.signal(signal.SIGTERM, interrupted)
+signal.signal(signal.SIGHUP, interrupted)
 temporary = None
 try:
     template = sys.argv[1]

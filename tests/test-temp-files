@@ -98,4 +98,73 @@ for storage in state cache; do
   done
 done
 
+"$TEST_REAL_PYTHON" - "$(dirname "$HELPER")/write-temp" "$TEST_ROOT" <<'PYTHON'
+import os
+from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
+
+writer, root = sys.argv[1:]
+for signum in (signal.SIGHUP, signal.SIGTERM):
+    directory = Path(root) / signum.name
+    directory.mkdir()
+    marker = directory / "child.pid"
+    process = subprocess.Popen([
+        sys.executable, "-I", writer, str(directory / ".download."),
+        sys.executable, "-c",
+        "import os, pathlib, sys, time; "
+        "pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(60)",
+        str(marker),
+    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    child = None
+    try:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                child = int(marker.read_text())
+                break
+            except (FileNotFoundError, ValueError):
+                time.sleep(0.01)
+        assert child is not None, "download child did not start"
+        process.send_signal(signum)
+        output, error = process.communicate(timeout=5)
+        assert process.returncode == 128 + signum, (signum.name, process.returncode, error)
+        assert not list(directory.glob(".download.*")), "interrupted download was not removed"
+        try:
+            os.kill(child, 0)
+        except ProcessLookupError:
+            child = None
+        assert child is None, "interrupted download child is still running"
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        if child is not None:
+            try:
+                os.kill(child, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+PYTHON
+
+export XDG_STATE_HOME="$TEST_ROOT/stale-state" XDG_CACHE_HOME="$TEST_ROOT/stale-cache"
+state_dir="$XDG_STATE_HOME/omarchy/fresh-wallpaper"
+cache_dir="$XDG_CACHE_HOME/omarchy/fresh-wallpaper"
+mkdir -p "$state_dir" "$cache_dir/.download.directory"
+for target in current recent history; do
+  printf 'unfinished\n' >"$state_dir/$target.json.tmp.stale"
+done
+printf 'partial\n' >"$cache_dir/.download.stale"
+printf 'untouched\n' >"$TEST_ROOT/stale-victim"
+ln -s -- "$TEST_ROOT/stale-victim" "$cache_dir/.download.link"
+touch "$state_dir/unrelated.tmp.file" "$cache_dir/.download.directory/keep"
+"$HELPER" --status >/dev/null
+[[ -f $state_dir/current.json.tmp.stale && -f $cache_dir/.download.stale ]]
+"$HELPER" --no-apply >/dev/null
+[[ -z $(find "$state_dir" -maxdepth 1 -name '*.json.tmp.*') ]]
+[[ ! -e $cache_dir/.download.stale && ! -L $cache_dir/.download.link ]]
+[[ $(cat "$TEST_ROOT/stale-victim") == untouched ]]
+[[ -f $state_dir/unrelated.tmp.file && -f $cache_dir/.download.directory/keep ]]
+
 printf 'Temporary-file tests passed\n'
