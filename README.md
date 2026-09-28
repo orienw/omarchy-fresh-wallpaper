@@ -2,7 +2,7 @@
 
 Fresh Wallpaper is a wallpaper rotation plugin for Omarchy Quattro. It downloads a random unseen image from Bing's recent daily wallpaper collection and applies it through Omarchy's native background command.
 
-Its small bar control opens a native configuration panel. Fresh Wallpaper runs inside `omarchy-shell`, with no standalone app or separate background process. The bar control is also the plugin's on-switch, so removing or disabling it stops wallpaper rotation.
+Its small bar control opens a native configuration panel. Fresh Wallpaper runs inside `omarchy-shell` and launches temporary helper processes for downloads. The bar control is also the plugin's on-switch, so removing or disabling it stops wallpaper rotation.
 
 ![Fresh Wallpaper panel open from the Omarchy bar over a sample mountain lake wallpaper](preview.png)
 
@@ -12,7 +12,7 @@ Its small bar control opens a native configuration panel. Fresh Wallpaper runs i
 - Downloads a UHD Bing wallpaper the first time the plugin is enabled.
 - Changes the wallpaper daily.
 - Schedules Daily, Weekly, and Monthly as elapsed time after the last successful change.
-- Applies a change that came due during sleep within a minute of waking.
+- Checks for changes that came due during sleep within a minute of waking; downloading waits for network connectivity.
 - Does not force another change when the Omarchy shell or plugin reloads.
 - Recovers a missing cached wallpaper on startup, while preserving an available background selected outside the plugin.
 - Chooses an image not used yet from Bing's archive of about the last two weeks.
@@ -44,7 +44,7 @@ These commands are included in a normal Omarchy installation. No sudo or pkexec 
 ## Install
 
 > [!IMPORTANT]
-> On Omarchy 4.0.0-1, install, update, or edit plugin files only while the session is unlocked. An [upstream shell hot-reload bug](https://github.com/basecamp/omarchy/issues/7106) can strand or crash an active lock screen. Scheduled wallpaper changes are unaffected because they update cache and state files without reloading plugin code.
+> On older Omarchy releases without the [plugin hot-reload fix](https://github.com/omacom/omarchy/pull/9485), install, update, or edit plugin files only while the session is unlocked. The affected releases can strand or crash an active lock screen when plugin code reloads. Scheduled wallpaper changes are unaffected because they update cache and state files without reloading plugin code.
 
 ```sh
 omarchy plugin add https://github.com/orienw/omarchy-fresh-wallpaper.git --enable
@@ -56,7 +56,7 @@ Enabling adds the bar control and downloads the first wallpaper. Later starts re
 
 Click the wallpaper icon to open the panel. The panel shows the current image, its attribution, and when the next change is due. Its info button opens Bing's page about the photo, and the settings let you choose the source, frequency, region, and whether to change the wallpaper when Omarchy starts. Bing Daily is the only source in version 0.1, with more providers planned. Frequency defaults to Daily, with simple Manual, Weekly, and Monthly choices alongside it.
 
-Daily means 24 hours after the last successful wallpaper change, Weekly means 7 days, and Monthly means 30 days. **Change now** starts that interval again, so these are elapsed schedules rather than fixed calendar times.
+Daily means 24 hours after the last successful wallpaper change, Weekly means 7 days, and Monthly means 30 days. A successful **Change now** starts that interval again, so these are elapsed schedules rather than fixed calendar times.
 
 Selecting Manual cancels pending retries from scheduled rotations. First-run and Change on start updates can still retry while offline.
 
@@ -79,7 +79,7 @@ omarchy-shell fresh-wallpaper status | jq
 
 ## Configure
 
-Use the bar panel for normal configuration. Its primary frequency choices are Manual, Daily, Weekly, and Monthly. Selecting **Custom minutes...** saves a 60-minute interval and reveals the advanced field for further adjustment. Every change is saved to Omarchy's native shell configuration.
+Use the bar panel for normal configuration. Its primary frequency choices are Manual, Daily, Weekly, and Monthly. Switching from a preset to **Custom minutes...** saves a 60-minute interval and reveals the advanced field for further adjustment. Every change is saved to Omarchy's native shell configuration.
 
 Use the commands below for scripting or values not offered as presets.
 
@@ -130,9 +130,11 @@ These commands persist settings in the plugin's existing entry in `~/.config/oma
 
 Fresh Wallpaper makes HTTPS requests to `www.bing.com`. Redirects are restricted to HTTPS. Archive responses are capped at 2 MiB and wallpaper downloads at 50 MiB. Automatic updates wait for NetworkManager and a successful HTTPS probe before downloading, then retry quietly if the machine is still offline. It stores downloaded images under `${XDG_CACHE_HOME:-$HOME/.cache}/omarchy/fresh-wallpaper/` and rotation metadata under `${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/fresh-wallpaper/`.
 
-The helper fully decodes each JPEG before changing the desktop, rejecting incomplete or corrupt downloads and cache entries. Decoding uses libjpeg's 64 MB memory limit and allows at most 64 scans per image. A failed request leaves the current Omarchy background untouched.
+The helper fully decodes each JPEG before changing the desktop, rejecting incomplete or corrupt downloads and cache entries. Decoding uses libjpeg's 64 MB memory limit and allows at most 64 scans per image. If no valid image can be obtained, the current Omarchy background stays unchanged. A failure saving metadata after Omarchy applies the image can report an error even though the background has changed.
 
-The Omarchy shell asks the helper for saved metadata and preview paths instead of reading state files itself. The helper only reads state files that are regular files, never through a symlink or from a FIFO, ignores any over 256 KiB, and only trusts wallpapers it saved in its own cache directory. A status only names images checked to be regular files within the 50 MiB download limit, and the helper refuses to run if its cache or state directory is a symlink. Each update has a 25-minute deadline and each status request a 10-second one, and the shell caps how much of the helper's output it keeps.
+The Omarchy shell asks the helper for saved metadata and preview paths instead of reading state files itself. The helper rejects symlink and non-regular state paths, ignores state files larger than 256 KiB, and only accepts saved wallpaper paths within its own cache directory. A status only names images checked to be regular files within the 50 MiB download limit, and the helper refuses to run if its cache or state directory is a symlink. Shell-launched helpers use a 25-minute update timeout, with up to 10 more seconds before a forced stop, and a 10-second status timeout. The shell also caps how much of the helper's output it keeps.
+
+A failed status read preserves the last known metadata and retries with increasing delays. It does not count as a missing wallpaper or trigger an extra first-run download.
 
 The helper holds the cache and state directories open and verifies their identities before using them. Its lock, state reads and writes, downloads, and cleanup use those open directories, so replacing a directory or one of its parents during an update cannot redirect those operations.
 
@@ -150,9 +152,7 @@ Update the installed plugin from its Git repository:
 omarchy plugin update io.github.orienw.fresh-wallpaper
 ```
 
-Omarchy shows the incoming changes before updating, validates the plugin, and reloads it. With **Change on start** left at its default Off setting, that reload keeps the current wallpaper and the existing schedule.
-
-Run updates only while the session is unlocked until the upstream lock-screen reload bug linked in the installation section is fixed.
+Omarchy shows the incoming changes before updating, validates the plugin, and reloads it. With **Change on start** left at its default Off setting, the plugin resumes the existing schedule. An overdue change or recovery of a missing cached wallpaper can still start an update after reload.
 
 ## Remove
 
@@ -183,7 +183,7 @@ tests/test-fetch-wallpaper
 tests/test-service
 ```
 
-From an active Omarchy Wayland session, smoke-test the real panel and bar widget types. The panel stays closed and no settings are changed:
+From an active, unlocked Omarchy Wayland session, smoke-test the real panel and bar widget types. The panel stays closed and no settings are changed:
 
 ```sh
 tests/test-ui
