@@ -106,10 +106,9 @@ staged_targets=()
 stage_state() {
   local temporary
 
-  temporary=$(mktemp "$1.tmp.XXXXXX")
+  temporary=$(printf '%s\n' "$2" | python3 -I "$TEMP_WRITER" "$1.tmp.")
   staged_files+=("$temporary")
   staged_targets+=("$1")
-  printf '%s\n' "$2" >"$temporary"
 }
 
 commit_state() {
@@ -162,9 +161,8 @@ valid_jpeg() {
 
 download_image() {
   local url="$1"
-  local output="$2"
 
-  curl \
+  python3 -I "$TEMP_WRITER" "$CACHE_FILES/.download." curl \
     --fail \
     --silent \
     --show-error \
@@ -178,7 +176,7 @@ download_image() {
     --connect-timeout 10 \
     --max-time 90 \
     --user-agent "omarchy-fresh-wallpaper/${VERSION}" \
-    --output "$output" \
+    --output /proc/self/fd/1 \
     "$url"
 }
 
@@ -334,8 +332,10 @@ require_command djpeg
 require_command jq
 require_command shuf
 require_command flock
+require_command python3
 if (( APPLY && !STATUS )); then require_command omarchy; fi
 
+TEMP_WRITER="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/write-temp"
 CACHE_HOME=${XDG_CACHE_HOME:-"$HOME/.cache"}
 STATE_HOME=${XDG_STATE_HOME:-"$HOME/.local/state"}
 CACHE_DIR="$CACHE_HOME/omarchy/fresh-wallpaper"
@@ -534,15 +534,15 @@ image_base="$CACHE_FILES/bing-${start_date}-${slug}"
 image_file="${image_base}-UHD.jpg"
 
 if ! valid_jpeg "$image_file"; then
-  partial=$(mktemp "$CACHE_FILES/.download.XXXXXX")
-
-  if download_image "$image_url" "$partial" 2>/dev/null && valid_jpeg "$partial"; then
+  if partial=$(download_image "$image_url" 2>/dev/null) && valid_jpeg "$partial"; then
     mv -T -- "$partial" "$image_file"
   else
+    [[ -z $partial ]] || rm -f -- "$partial"
+    partial=""
     image_url=$fallback_image_url
     image_file="${image_base}-1920x1080.jpg"
     if ! valid_jpeg "$image_file"; then
-      download_image "$image_url" "$partial" \
+      partial=$(download_image "$image_url") \
         || fail "could not download the selected Bing wallpaper in UHD or 1920x1080"
       valid_jpeg "$partial" || fail "Bing returned a file that is not a JPEG image"
       mv -T -- "$partial" "$image_file"

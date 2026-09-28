@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+PROJECT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+HELPER=${1:-"$PROJECT_DIR/scripts/fetch-wallpaper"}
+TEST_ROOT=$(mktemp -d)
+trap 'rm -rf -- "$TEST_ROOT"' EXIT
+
+export PATH="$PROJECT_DIR/tests/mocks:$PATH"
+export TEST_FIXTURE_DIR="$PROJECT_DIR/tests/fixtures"
+export TEST_REAL_PYTHON
+TEST_REAL_PYTHON=$(command -v python3)
+mkdir "$TEST_ROOT/bin"
+
+# Replace the name immediately after atomic creation, while its fd is still open.
+cat >"$TEST_ROOT/replace.py" <<'PYTHON'
+import os
+import runpy
+import sys
+import tempfile
+
+create = tempfile.mkstemp
+
+def replace(*args, **kwargs):
+    fd, name = create(*args, **kwargs)
+    if os.environ["TEST_TEMP_PREFIX"] in name:
+        os.unlink(name)
+        kind = os.environ["TEST_TEMP_KIND"]
+        if kind == "fifo":
+            os.mkfifo(name)
+        elif kind == "hardlink":
+            os.link(os.environ["TEST_TEMP_VICTIM"], name)
+        else:
+            os.symlink(os.environ["TEST_TEMP_VICTIM"], name)
+        with open(os.environ["TEST_TEMP_MARKER"], "w"):
+            pass
+    return fd, name
+
+tempfile.mkstemp = replace
+sys.argv = sys.argv[2:]  # Drop this driver and the interpreter's -I argument.
+runpy.run_path(sys.argv[0], run_name="__main__")
+PYTHON
+cat >"$TEST_ROOT/bin/python3" <<'SH'
+#!/usr/bin/env bash
+exec "$TEST_REAL_PYTHON" -I "$TEST_TEMP_DRIVER" "$@"
+SH
+
+# The released helper reopened mktemp's name. Keep that boundary testable too.
+cat >"$TEST_ROOT/bin/mktemp" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+name=$(/usr/bin/mktemp "$@")
+if [[ $name == *"$TEST_TEMP_PREFIX"* ]]; then
+  rm -f -- "$name"
+  case "$TEST_TEMP_KIND" in
+    fifo) mkfifo -- "$name" ;;
+    hardlink) ln -- "$TEST_TEMP_VICTIM" "$name" ;;
+    *) ln -s -- "$TEST_TEMP_VICTIM" "$name" ;;
+  esac
+  : >"$TEST_TEMP_MARKER"
+fi
+printf '%s\n' "$name"
+SH
+chmod +x "$TEST_ROOT/bin/python3" "$TEST_ROOT/bin/mktemp"
+export TEST_TEMP_DRIVER="$TEST_ROOT/replace.py"
+
+for storage in state cache; do
+  for kind in symlink dangling hardlink fifo; do
+    case_dir="$TEST_ROOT/$storage-$kind"
+    mkdir "$case_dir"
+    export XDG_STATE_HOME="$case_dir/state" XDG_CACHE_HOME="$case_dir/cache"
+    export TEST_APPLY_LOG="$case_dir/applied"
+    export TEST_TEMP_KIND="$kind" TEST_TEMP_VICTIM="$case_dir/victim" TEST_TEMP_MARKER="$case_dir/swapped"
+    export TEST_TEMP_PREFIX=recent.json.tmp.
+    [[ $storage != cache ]] || TEST_TEMP_PREFIX=.download.
+    printf 'untouched\n' >"$case_dir/expected"
+    [[ $kind == dangling ]] || cp "$case_dir/expected" "$TEST_TEMP_VICTIM"
+
+    result=0
+    PATH="$TEST_ROOT/bin:$PATH" timeout 10 "$HELPER" >"$case_dir/result" 2>"$case_dir/error" || result=$?
+    [[ -f $TEST_TEMP_MARKER ]] || { cat "$case_dir/error" >&2; exit 1; }
+    if [[ $kind == dangling ]]; then
+      unchanged=0
+      [[ ! -e $TEST_TEMP_VICTIM ]] || unchanged=1
+    else
+      unchanged=0
+      cmp -s "$case_dir/expected" "$TEST_TEMP_VICTIM" || unchanged=1
+    fi
+    if (( unchanged != 0 || result == 0 || result == 124 )) || [[ -s $TEST_APPLY_LOG ]]; then
+      printf '%s/%s: temporary-file substitution was not safely rejected (exit %s)\n' "$storage" "$kind" "$result" >&2
+      exit 1
+    fi
+    if [[ -n $(find "$case_dir/state" "$case_dir/cache" -name '*.tmp.*' -o -name '.download.*') ]]; then
+      printf '%s/%s: temporary-file cleanup failed\n' "$storage" "$kind" >&2
+      exit 1
+    fi
+  done
+done
+
+printf 'Temporary-file tests passed\n'

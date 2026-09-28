@@ -99,7 +99,7 @@ for storage in state cache; do
         case "$phase" in
           open) tool=stat ;;
           lock) tool=flock ;;
-          stage | download-failure) tool=mktemp ;;
+          stage | download-failure) tool=python3 ;;
           commit | cleanup) tool=omarchy ;;
           read) tool=dd ;;
         esac

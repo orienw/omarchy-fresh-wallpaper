@@ -298,14 +298,14 @@ fi
 
 use_case staged-save
 mkdir -p "$TEST_TMP/staged-save/bin"
-cat >"$TEST_TMP/staged-save/bin/mktemp" <<MKTEMP
+cat >"$TEST_TMP/staged-save/bin/python3" <<PYTHON
 #!/bin/sh
-case "\$1" in
+case "\$3" in
   *recent.json.tmp.*) exit 1 ;;
 esac
-exec $(command -v mktemp) "\$@"
-MKTEMP
-chmod +x "$TEST_TMP/staged-save/bin/mktemp"
+exec $(command -v python3) "\$@"
+PYTHON
+chmod +x "$TEST_TMP/staged-save/bin/python3"
 fetch >/dev/null
 saved_current=$(cat "$XDG_STATE_HOME/omarchy/fresh-wallpaper/current.json")
 if PATH="$TEST_TMP/staged-save/bin:$PATH" fetch >/dev/null 2>&1; then
@@ -634,5 +634,6 @@ fi
 
 unset TEST_OFFLINE
 "$PROJECT_DIR/tests/test-storage-races"
+"$PROJECT_DIR/tests/test-temp-files"
 
 printf 'fetch-wallpaper tests passed\n'

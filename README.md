@@ -37,6 +37,7 @@ Other providers can be added behind the existing `provider` setting without chan
 - `djpeg` (from `libjpeg-turbo`)
 - GNU core utilities
 - `flock` (from `util-linux`)
+- Python 3 (standard library only)
 
 These commands are included in a normal Omarchy installation. No sudo or pkexec is required.
 
@@ -134,6 +135,8 @@ The helper fully decodes each JPEG before changing the desktop, rejecting incomp
 The Omarchy shell never reads the plugin's state files or the paths they name. It asks the helper for a status instead. The helper only reads state files that are regular files, never through a symlink or from a FIFO, ignores any over 256 KiB, and only trusts wallpapers it saved in its own cache directory. A status only names images that are regular files within the 50 MiB download limit, and the helper refuses to run if its cache or state directory is a symlink. Each update has a 25-minute deadline and each status request a 10-second one, and the shell caps how much of the helper's output it keeps.
 
 The helper holds the cache and state directories open and verifies their identities before using them. Its lock, state reads and writes, downloads, and cleanup use those open directories, so replacing a directory or one of its parents during an update cannot redirect those operations.
+
+Temporary files are created exclusively and written through the original open file handle. Replacing a temporary filename with a link cannot redirect a state write or download.
 
 Bing images remain copyrighted by their respective owners. Use them as personal desktop wallpapers and inspect the preserved attribution with the status command.
 
