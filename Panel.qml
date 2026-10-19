@@ -1,5 +1,6 @@
 import QtQuick
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 
 // qmllint disable missing-property
@@ -41,8 +42,8 @@ Panel {
   readonly property double nextChangeAtMs: wallpaperService ? Number(wallpaperService.nextChangeAtMs || 0) : 0
   readonly property bool retryPending: wallpaperService ? Number(wallpaperService.retryAfterMs || 0) > 0 : false
   readonly property string errorText: wallpaperService ? wallpaperService.lastError : ""
-  readonly property color foreground: bar ? bar.foreground : Color.foreground
-  readonly property color urgent: bar ? bar.urgent : Color.urgent
+  readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
+  readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property int configuredInterval: wallpaperService
     ? wallpaperService.intervalMinutes
@@ -220,8 +221,8 @@ Panel {
             height: Style.space(63)
             anchors.verticalCenter: parent.verticalCenter
             radius: Style.cornerRadius
-            color: Style.normalFillFor(root.foreground, Color.accent)
-            borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
+            color: Style.normalFillFor(root.foreground, Commons.Color.accent)
+            borderSpec: Border.controlSpec("normal", root.foreground, Commons.Color.accent)
             clip: true
 
             Image {

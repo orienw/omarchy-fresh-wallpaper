@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 15
     strategy:
       matrix:
-        omarchy: [v4.0.0, v4.0.3]
+        omarchy: [v4.0.0, v4.0.3, v4.0.5]
     container: archlinux@sha256:aecf5b39bd3139a951090dfb3d940f9317e4c5fca038c65fb49ac03910f7133e
 
     steps:
