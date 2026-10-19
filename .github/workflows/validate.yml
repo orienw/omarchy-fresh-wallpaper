@@ -12,11 +12,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
         omarchy: [v4.0.0, v4.0.3, v4.0.5]
     container: archlinux@sha256:aecf5b39bd3139a951090dfb3d940f9317e4c5fca038c65fb49ac03910f7133e
 
     steps:
+      - name: Use Qt 6.11 packages for older Omarchy
+        if: matrix.omarchy == 'v4.0.0' || matrix.omarchy == 'v4.0.3'
+        run: >-
+          printf '%s\n' 'Server = https://archive.archlinux.org/repos/2026/09/29/$repo/os/$arch'
+          > /etc/pacman.d/mirrorlist
+
       - name: Install test dependencies
         run: >-
           pacman -Syu --noconfirm --needed
