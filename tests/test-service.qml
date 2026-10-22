@@ -252,15 +252,35 @@ ShellRoot {
         root.fail("a scheduled fetch queued a retry after switching to Manual")
         return
       }
-      service.lastTrigger = "first-run"
-      service.retryAfterMs = 0
-      service.deferCount = 0
-      service.processDeferred()
-      var manualRetryRemaining = service.scheduledAtMs() - Date.now()
-      if (manualRetryRemaining < 5000 - 2000 || manualRetryRemaining > 5000
-          || service.statusPayload().nextRunAt === null) {
-        root.fail("manual mode dropped an automatic offline retry: " + manualRetryRemaining)
-        return
+      var userTriggers = ["panel", "manual", "bar"]
+      for (var u = 0; u < userTriggers.length; u++) {
+        service.setIntervalMinutes("15")
+        service.lastTrigger = userTriggers[u]
+        service.queueRetry(15 * 60000)
+        if (service.retryAfterMs <= Date.now()) {
+          root.fail("a user-triggered failure did not queue its automatic-mode retry")
+          return
+        }
+        service.setIntervalMinutes("0")
+        if (service.retryAfterMs !== 0 || service.statusPayload().nextRunAt !== null) {
+          root.fail("Manual retained a retry from " + userTriggers[u])
+          return
+        }
+      }
+      var startupTriggers = ["first-run", "startup"]
+      for (var t = 0; t < startupTriggers.length; t++) {
+        service.setIntervalMinutes("15")
+        service.lastTrigger = startupTriggers[t]
+        service.retryAfterMs = 0
+        service.deferCount = 0
+        service.processDeferred()
+        service.setIntervalMinutes("0")
+        var manualRetryRemaining = service.scheduledAtMs() - Date.now()
+        if (manualRetryRemaining < 5000 - 2000 || manualRetryRemaining > 5000
+            || service.statusPayload().nextRunAt === null) {
+          root.fail("Manual dropped a retry from " + startupTriggers[t])
+          return
+        }
       }
       service.retryAfterMs = 0
       service.recentCount = 1

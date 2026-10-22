@@ -456,7 +456,7 @@ Item {
   onManifestChanged: Qt.callLater(initialize)
   onShellChanged: Qt.callLater(initialize)
   onIntervalMinutesChanged: {
-    if (intervalMinutes === 0 && retryOrigin === "schedule") {
+    if (intervalMinutes === 0 && (retryOrigin === "schedule" || isUserTrigger(retryOrigin))) {
       retryAfterMs = 0
       deferCount = 0
     }
