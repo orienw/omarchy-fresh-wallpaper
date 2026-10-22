@@ -621,10 +621,30 @@ if fetch --no-apply >/dev/null 2>&1; then
   exit 1
 fi
 
-if fetch --no-apply --network-wait-seconds 3601 >/dev/null 2>&1; then
-  printf 'out-of-range network wait unexpectedly succeeded\n' >&2
-  exit 1
-fi
+use_case numeric-options
+numeric_cache="$XDG_CACHE_HOME/omarchy/fresh-wallpaper"
+mkdir -p "$numeric_cache"
+for i in {1..12}; do
+  printf 'cached\n' >"$numeric_cache/bing-extra-$i.jpg"
+done
+fetch --cache-limit 00010 --network-wait-seconds 00008 >/dev/null
+[[ $(find "$numeric_cache" -maxdepth 1 -name 'bing-*.jpg' | wc -l) -eq 10 ]]
+fetch --cache-limit 08 --network-wait-seconds 0000 >/dev/null
+[[ $(find "$numeric_cache" -maxdepth 1 -name 'bing-*.jpg' | wc -l) -eq 8 ]]
+fetch --status --cache-limit 000100 --network-wait-seconds 003600 >/dev/null
+
+for value in 0 7 101 000101 18446744073709551624; do
+  if fetch --status --cache-limit "$value" >/dev/null 2>&1; then
+    printf 'out-of-range cache limit %s unexpectedly succeeded\n' "$value" >&2
+    exit 1
+  fi
+done
+for value in 3601 0003601 18446744073709551616; do
+  if fetch --status --network-wait-seconds "$value" >/dev/null 2>&1; then
+    printf 'out-of-range network wait %s unexpectedly succeeded\n' "$value" >&2
+    exit 1
+  fi
+done
 
 use_case offline
 export TEST_OFFLINE=1

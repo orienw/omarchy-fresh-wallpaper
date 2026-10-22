@@ -320,10 +320,16 @@ done
 
 [[ $PROVIDER == "bing" ]] || fail "unsupported provider: $PROVIDER"
 [[ $MARKET =~ ^[A-Za-z]{2,3}-[A-Za-z]{2}$ ]] || fail "invalid Bing market: $MARKET"
+# Strip leading zeros and bound the digit count before Bash arithmetic, which
+# otherwise interprets octal numbers and wraps oversized integers.
 [[ $CACHE_LIMIT =~ ^[0-9]+$ ]] || fail "cache limit must be an integer"
-(( CACHE_LIMIT >= 8 && CACHE_LIMIT <= 100 )) || fail "cache limit must be between 8 and 100"
+CACHE_LIMIT=${CACHE_LIMIT#"${CACHE_LIMIT%%[!0]*}"}
+CACHE_LIMIT=${CACHE_LIMIT:-0}
+(( ${#CACHE_LIMIT} <= 3 && CACHE_LIMIT >= 8 && CACHE_LIMIT <= 100 )) || fail "cache limit must be between 8 and 100"
 [[ $NETWORK_WAIT_SECONDS =~ ^[0-9]+$ ]] || fail "network wait must be an integer"
-(( NETWORK_WAIT_SECONDS <= 3600 )) || fail "network wait must be 0-3600 seconds"
+NETWORK_WAIT_SECONDS=${NETWORK_WAIT_SECONDS#"${NETWORK_WAIT_SECONDS%%[!0]*}"}
+NETWORK_WAIT_SECONDS=${NETWORK_WAIT_SECONDS:-0}
+(( ${#NETWORK_WAIT_SECONDS} <= 4 && NETWORK_WAIT_SECONDS <= 3600 )) || fail "network wait must be 0-3600 seconds"
 (( !PREVIOUS || APPLY )) || fail "--previous cannot be combined with --no-apply"
 (( !STATUS || (APPLY && !PREVIOUS) )) || fail "--status cannot be combined with --previous or --no-apply"
 
