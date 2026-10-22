@@ -22,13 +22,26 @@ ShellRoot {
     property bool previousAvailable: false
     property int refreshCalls: 0
     property int previousCalls: 0
+    property bool rejectWrites: false
 
     function refreshStatus() {}
     function startRefresh(trigger) { refreshCalls++; running = true }
     function startPrevious() { previousCalls++ }
-    function setProvider(value) { provider = value; return value }
-    function setIntervalMinutes(value) { intervalMinutes = Number(value); return String(value) }
-    function setMarket(value) { market = value; return value }
+    function setProvider(value) {
+      if (rejectWrites) return "error: setting could not be saved"
+      provider = value
+      return value
+    }
+    function setIntervalMinutes(value) {
+      if (rejectWrites) return "error: setting could not be saved"
+      intervalMinutes = Number(value)
+      return String(value)
+    }
+    function setMarket(value) {
+      if (rejectWrites) return "error: setting could not be saved"
+      market = value
+      return value
+    }
     function setRunOnStart(value) { runOnStart = value === "true"; return value }
   }
 
@@ -96,6 +109,7 @@ ShellRoot {
         input.testPointerThenKeyboard()
         input.testDropdownFocus()
         input.testDropdownValues()
+        input.testRejectedDropdownValues()
         input.testHiddenIntervalFocus()
         input.testEditorPointerActions()
         input.testEditorNavigationKeys()
@@ -184,6 +198,45 @@ ShellRoot {
       root.check(service.market === "en-GB", "Region selection was not applied")
       service.market = "en-CA"
       root.check(region.currentLabel() === "Canada", "Region ignored a service market change")
+    }
+
+    function testRejectedDropdownValues() {
+      var panel = loader.item
+      var frequency = root.find(panel, "label", "Frequency")
+      var custom = root.find(panel, "label", "Custom interval (minutes)")
+      var region = root.find(panel, "label", "Region")
+      service.intervalMinutes = 1440
+      service.market = "en-US"
+      service.rejectWrites = true
+
+      mouseClick(frequency, frequency.width / 2, frequency.height - Style.spacing.controlHeight / 2)
+      wait(30)
+      keyClick(Qt.Key_Down)
+      keyClick(Qt.Key_Return)
+      wait(30)
+      root.check(service.intervalMinutes === 1440 && frequency.currentLabel() === "Daily",
+        "a rejected preset remained selected")
+
+      mouseClick(frequency, frequency.width / 2, frequency.height - Style.spacing.controlHeight / 2)
+      wait(30)
+      for (var i = 0; i < 3; i++) keyClick(Qt.Key_Down)
+      keyClick(Qt.Key_Return)
+      wait(30)
+      root.check(service.intervalMinutes === 1440 && frequency.currentLabel() === "Daily" && !custom.visible,
+        "a rejected Custom selection left the frequency and editor inconsistent")
+
+      mouseClick(region, region.width / 2, region.height - Style.spacing.controlHeight / 2)
+      wait(30)
+      keyClick(Qt.Key_Down)
+      keyClick(Qt.Key_Return)
+      wait(30)
+      root.check(service.market === "en-US" && region.currentLabel() === "United States",
+        "a rejected region remained selected")
+      service.rejectWrites = false
+      service.intervalMinutes = 10080
+      service.market = "en-CA"
+      root.check(frequency.currentLabel() === "Weekly" && region.currentLabel() === "Canada",
+        "dropdown bindings stopped following service changes after a rejected save")
     }
 
     function testHiddenIntervalFocus() {

@@ -453,7 +453,10 @@ Panel {
           onPopupOpenChanged: if (!popupOpen) root.restorePanelFocus()
           onHovered: function(hovered) { if (hovered) root.cursorIndex = root.sourceCursorIndex }
           onChanged: function(value) {
-            if (root.wallpaperService) root.wallpaperService.setProvider(value)
+            if (root.wallpaperService) {
+              var result = root.wallpaperService.setProvider(value)
+              if (String(result).indexOf("error:") === 0) providerDropdown.value = root.wallpaperService.provider
+            }
           }
         }
 
@@ -470,7 +473,11 @@ Panel {
           hasCursor: root.cursorIndex === root.frequencyCursorIndex
           onPopupOpenChanged: if (!popupOpen) root.restorePanelFocus()
           onHovered: function(hovered) { if (hovered) root.cursorIndex = root.frequencyCursorIndex }
-          onChanged: function(value) { root.selectFrequency(value) }
+          onChanged: function(value) {
+            var result = root.selectFrequency(value)
+            if (String(result).indexOf("error:") === 0)
+              frequencyDropdown.value = root.customIntervalVisible ? "custom" : String(root.configuredInterval)
+          }
         }
 
         NumberField {
@@ -519,7 +526,10 @@ Panel {
           onPopupOpenChanged: if (!popupOpen) root.restorePanelFocus()
           onHovered: function(hovered) { if (hovered) root.cursorIndex = root.marketCursorIndex }
           onChanged: function(value) {
-            if (root.wallpaperService) root.wallpaperService.setMarket(value)
+            if (root.wallpaperService) {
+              var result = root.wallpaperService.setMarket(value)
+              if (String(result).indexOf("error:") === 0) marketDropdown.value = root.wallpaperService.market
+            }
           }
         }
 
