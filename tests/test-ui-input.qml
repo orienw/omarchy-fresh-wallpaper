@@ -94,6 +94,7 @@ ShellRoot {
       try {
         input.testPointerThenKeyboard()
         input.testDropdownFocus()
+        input.testDropdownValues()
         console.log("UI input tests passed")
       } catch (error) {
         console.error("TEST FAILURE:", error.message)
@@ -143,6 +144,40 @@ ShellRoot {
         root.check(panel.cursorIndex === nextIndices[i], "Down did not leave " + labels[i])
         root.check(!dropdown.popupOpen, "Down reopened " + labels[i])
       }
+    }
+
+    function testDropdownValues() {
+      var panel = loader.item
+      var frequency = root.find(panel, "label", "Frequency")
+      mouseClick(frequency, frequency.width / 2, frequency.height - Style.spacing.controlHeight / 2)
+      wait(30)
+      for (var i = 0; i < 3; i++) keyClick(Qt.Key_Down)
+      keyClick(Qt.Key_Return)
+      wait(30)
+      var custom = root.find(panel, "label", "Custom interval (minutes)")
+      root.check(custom.visible && custom.field.activeFocus, "Custom selection did not focus the interval")
+      keyClick(Qt.Key_A, Qt.ControlModifier)
+      keyClick(Qt.Key_1)
+      keyClick(Qt.Key_4)
+      keyClick(Qt.Key_4)
+      keyClick(Qt.Key_0)
+      keyClick(Qt.Key_Return)
+      wait(30)
+      root.check(service.intervalMinutes === 1440 && !custom.visible, "typed preset interval was not applied")
+      root.check(frequency.value === "1440" && frequency.currentLabel() === "Daily", "Frequency retained Custom after entering a preset")
+      service.intervalMinutes = 0
+      root.check(frequency.currentLabel() === "Manual only", "Frequency ignored a service interval change")
+      service.intervalMinutes = 1440
+
+      var region = root.find(panel, "label", "Region")
+      mouseClick(region, region.width / 2, region.height - Style.spacing.controlHeight / 2)
+      wait(30)
+      keyClick(Qt.Key_Down)
+      keyClick(Qt.Key_Return)
+      wait(30)
+      root.check(service.market === "en-GB", "Region selection was not applied")
+      service.market = "en-CA"
+      root.check(region.currentLabel() === "Canada", "Region ignored a service market change")
     }
   }
 

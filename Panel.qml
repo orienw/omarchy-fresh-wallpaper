@@ -394,7 +394,9 @@ Panel {
           id: providerDropdown
           width: parent.width
           label: "Source"
-          value: root.wallpaperService ? root.wallpaperService.provider : "bing"
+          Binding on value {
+            value: root.wallpaperService ? root.wallpaperService.provider : "bing"
+          }
           options: [
             { value: "bing", label: "Bing Daily (UHD)" }
           ]
@@ -412,7 +414,9 @@ Panel {
           id: frequencyDropdown
           width: parent.width
           label: "Frequency"
-          value: root.customIntervalVisible ? "custom" : String(root.configuredInterval)
+          Binding on value {
+            value: root.customIntervalVisible ? "custom" : String(root.configuredInterval)
+          }
           options: root.frequencyOptions
           foreground: root.foreground
           fontFamily: root.fontFamily
@@ -446,7 +450,9 @@ Panel {
           id: marketDropdown
           width: parent.width
           label: "Region"
-          value: root.wallpaperService ? root.wallpaperService.market : "en-US"
+          Binding on value {
+            value: root.wallpaperService ? root.wallpaperService.market : "en-US"
+          }
           options: root.marketOptions
           foreground: root.foreground
           fontFamily: root.fontFamily
