@@ -182,12 +182,17 @@ ShellRoot {
       service.deferCount = 0
       service.updateError = ""
       service.lastTrigger = ""
-      service.statusRead(JSON.stringify({current: {path: root.existingWallpaperPath, changedAt: new Date().toISOString()}}))
+      var savedWallpaper = {
+        path: root.existingWallpaperPath,
+        title: "Saved wallpaper",
+        changedAt: new Date().toISOString()
+      }
+      service.statusRead(JSON.stringify({current: savedWallpaper}))
 
       service.updateError = "an earlier update failed"
       service.statusRead("{}")
       if (service.statusError === "" || service.lastError !== "an earlier update failed"
-          || service.currentWallpaper.path !== root.existingWallpaperPath) {
+          || JSON.stringify(service.currentWallpaper) !== JSON.stringify(savedWallpaper)) {
         root.fail("a failed status hid the update error or discarded the wallpaper")
         return
       }
@@ -197,6 +202,14 @@ ShellRoot {
         return
       }
       service.updateError = ""
+      service.statusRead(JSON.stringify({current: null}))
+      if (service.statusError !== "" || service.hasCurrentWallpaper()
+          || service.currentWallpaper.title !== undefined
+          || service.currentWallpaper.changedAt !== undefined) {
+        root.fail("a successful empty status retained wallpaper metadata")
+        return
+      }
+      service.statusRead(JSON.stringify({current: savedWallpaper}))
 
       if (service.normalizedInterval(525601) !== 525600) {
         root.fail("custom interval maximum was not enforced")

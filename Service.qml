@@ -157,7 +157,7 @@ Item {
     statusError = ""
     statusFailures = 0
     var current = status.current
-    if (current) currentWallpaper = current
+    currentWallpaper = current || ({})
     recentCount = Math.max(0, Math.floor(Number(status.recentCount)) || 0)
     previewWallpaperPath = String(status.wallpaper || "")
     externalBackgroundPath = String(status.external || "")
