@@ -193,10 +193,13 @@ Panel {
     Qt.callLater(ensureCursorVisible)
   }
   onCursorIndexChanged: Qt.callLater(ensureCursorVisible)
-  onCustomIntervalVisibleChanged: Qt.callLater(ensureCursorVisible)
+  onCustomIntervalVisibleChanged: {
+    if (!customIntervalVisible && customIntervalField.field.activeFocus) restorePanelFocus()
+    Qt.callLater(ensureCursorVisible)
+  }
   onConfiguredIntervalChanged: {
     if (configuredInterval > 0) customIntervalDraft = configuredInterval
-    if (intervalIsPreset) customIntervalRequested = false
+    if ([0, 1440, 10080, 43200].indexOf(configuredInterval) !== -1) customIntervalRequested = false
   }
   onStartupCursorIndexChanged: cursorIndex = Math.min(cursorIndex, startupCursorIndex)
 

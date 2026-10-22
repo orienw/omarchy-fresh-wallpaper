@@ -95,6 +95,7 @@ ShellRoot {
         input.testPointerThenKeyboard()
         input.testDropdownFocus()
         input.testDropdownValues()
+        input.testHiddenIntervalFocus()
         input.testIntervalEditorKeys()
         input.testShortPanel()
         console.log("UI input tests passed")
@@ -180,6 +181,33 @@ ShellRoot {
       root.check(service.market === "en-GB", "Region selection was not applied")
       service.market = "en-CA"
       root.check(region.currentLabel() === "Canada", "Region ignored a service market change")
+    }
+
+    function testHiddenIntervalFocus() {
+      var panel = loader.item
+      var custom = root.find(panel, "label", "Custom interval (minutes)")
+      service.intervalMinutes = 1425
+      panel.cursorIndex = panel.customCursorIndex
+      keyClick(Qt.Key_Return)
+      root.check(custom.field.activeFocus, "the interval field did not receive focus")
+      keyClick(Qt.Key_Up)
+      wait(0)
+      root.check(service.intervalMinutes === 1440 && !custom.visible && !custom.field.activeFocus,
+        "stepping onto a preset retained focus in the hidden interval field")
+      keyClick(Qt.Key_Down)
+      root.check(service.intervalMinutes === 1440 && panel.cursorIndex === panel.startupCursorIndex,
+        "Down edited the hidden interval instead of navigating")
+
+      service.intervalMinutes = 60
+      panel.cursorIndex = panel.customCursorIndex
+      keyClick(Qt.Key_Return)
+      root.check(custom.field.activeFocus, "the interval field did not regain focus")
+      keyClick(Qt.Key_Up)
+      root.check(service.intervalMinutes === 75, "the interval edit was not applied before a service change")
+      service.intervalMinutes = 1440
+      wait(0)
+      root.check(!custom.visible && !custom.field.activeFocus,
+        "a service interval change retained focus in the hidden field")
     }
 
     function testIntervalEditorKeys() {
