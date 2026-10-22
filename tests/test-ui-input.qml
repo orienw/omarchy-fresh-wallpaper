@@ -98,6 +98,7 @@ ShellRoot {
         input.testDropdownValues()
         input.testHiddenIntervalFocus()
         input.testEditorPointerActions()
+        input.testEditorNavigationKeys()
         input.testIntervalEditorKeys()
         input.testShortPanel()
         console.log("UI input tests passed")
@@ -242,6 +243,32 @@ ShellRoot {
       }
       service.previousAvailable = false
       service.runOnStart = false
+    }
+
+    function testEditorNavigationKeys() {
+      var panel = loader.item
+      var custom = root.find(panel, "label", "Custom interval (minutes)")
+      var cases = [
+        {key: Qt.Key_Tab, name: "Tab", draft: "75"},
+        {key: Qt.Key_Backtab, modifiers: Qt.ShiftModifier, name: "Backtab", draft: "90"},
+        {key: Qt.Key_Escape, name: "Escape", draft: "999"}
+      ]
+      for (var i = 0; i < cases.length; i++) {
+        var entry = cases[i]
+        service.intervalMinutes = 60
+        panel.cursorIndex = panel.customCursorIndex
+        keyClick(Qt.Key_Return)
+        root.check(custom.field.activeFocus, "the interval field did not receive focus before " + entry.name)
+        keyClick(Qt.Key_A, Qt.ControlModifier)
+        for (var j = 0; j < entry.draft.length; j++) keyClick(entry.draft[j])
+        keyClick(entry.key, entry.modifiers)
+        wait(0)
+        root.check(panel.opened && !custom.field.activeFocus && service.intervalMinutes === Number(entry.draft),
+          entry.name + " did not commit the interval and leave editing")
+        keyClick(Qt.Key_Down)
+        root.check(panel.cursorIndex === panel.marketCursorIndex && service.intervalMinutes === Number(entry.draft),
+          entry.name + " did not return focus to panel navigation")
+      }
     }
 
     function testIntervalEditorKeys() {
