@@ -21,10 +21,11 @@ ShellRoot {
     property double retryAfterMs: 0
     property bool previousAvailable: false
     property int refreshCalls: 0
+    property int previousCalls: 0
 
     function refreshStatus() {}
     function startRefresh(trigger) { refreshCalls++; running = true }
-    function startPrevious() {}
+    function startPrevious() { previousCalls++ }
     function setProvider(value) { provider = value; return value }
     function setIntervalMinutes(value) { intervalMinutes = Number(value); return String(value) }
     function setMarket(value) { market = value; return value }
@@ -96,6 +97,7 @@ ShellRoot {
         input.testDropdownFocus()
         input.testDropdownValues()
         input.testHiddenIntervalFocus()
+        input.testEditorPointerActions()
         input.testIntervalEditorKeys()
         input.testShortPanel()
         console.log("UI input tests passed")
@@ -208,6 +210,38 @@ ShellRoot {
       wait(0)
       root.check(!custom.visible && !custom.field.activeFocus,
         "a service interval change retained focus in the hidden field")
+    }
+
+    function testEditorPointerActions() {
+      var panel = loader.item
+      var custom = root.find(panel, "label", "Custom interval (minutes)")
+      service.previousAvailable = true
+      service.intervalMinutes = 60
+      var cases = [
+        {property: "text", label: "Change now", count: "refreshCalls", next: panel.previousCursorIndex},
+        {property: "tooltipText", label: "Previous wallpaper", count: "previousCalls", next: panel.sourceCursorIndex},
+        {property: "label", label: "Change on start", count: "runOnStart", next: panel.startupCursorIndex}
+      ]
+      for (var i = 0; i < cases.length; i++) {
+        var entry = cases[i]
+        panel.cursorIndex = panel.customCursorIndex
+        keyClick(Qt.Key_Return)
+        root.check(custom.field.activeFocus, "the interval field did not receive focus before " + entry.label)
+        var control = root.find(panel, entry.property, entry.label)
+        var before = service[entry.count]
+        mouseMove(control, control.width / 2, control.height / 2)
+        mouseClick(control, control.width / 2, control.height / 2)
+        wait(0)
+        root.check(service[entry.count] === (entry.count === "runOnStart" ? !before : before + 1),
+          entry.label + " did not execute while editing")
+        root.check(!custom.field.activeFocus, entry.label + " retained interval editor focus")
+        service.running = false
+        keyClick(Qt.Key_Down)
+        root.check(service.intervalMinutes === 60 && panel.cursorIndex === entry.next,
+          "Down edited the interval after clicking " + entry.label)
+      }
+      service.previousAvailable = false
+      service.runOnStart = false
     }
 
     function testIntervalEditorKeys() {

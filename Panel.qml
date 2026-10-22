@@ -386,7 +386,10 @@ Panel {
             enabled: root.wallpaperService && !root.busy
             hasCursor: root.cursorIndex === 0
             onHovered: function(hovered) { if (hovered) root.cursorIndex = 0 }
-            onClicked: if (root.wallpaperService) root.wallpaperService.startRefresh("panel")
+            onClicked: {
+              keyCatcher.forceActiveFocus()
+              if (root.wallpaperService) root.wallpaperService.startRefresh("panel")
+            }
           }
 
           PanelActionButton {
@@ -400,7 +403,10 @@ Panel {
             enabled: root.previousAvailable && !root.busy
             hasCursor: root.cursorIndex === root.previousCursorIndex
             onHovered: function(hovered) { if (hovered) root.cursorIndex = root.previousCursorIndex }
-            onClicked: root.restorePrevious()
+            onClicked: {
+              keyCatcher.forceActiveFocus()
+              root.restorePrevious()
+            }
           }
 
           PanelActionButton {
@@ -414,7 +420,10 @@ Panel {
             enabled: root.learnMoreUrl !== ""
             hasCursor: root.cursorIndex === root.learnMoreCursorIndex
             onHovered: function(hovered) { if (hovered) root.cursorIndex = root.learnMoreCursorIndex }
-            onClicked: root.openLearnMore()
+            onClicked: {
+              keyCatcher.forceActiveFocus()
+              root.openLearnMore()
+            }
           }
         }
 
@@ -524,6 +533,7 @@ Panel {
           hasCursor: root.cursorIndex === root.startupCursorIndex
           onHovered: function(hovered) { if (hovered) root.cursorIndex = root.startupCursorIndex }
           onClicked: {
+            keyCatcher.forceActiveFocus()
             if (root.wallpaperService)
               root.wallpaperService.setRunOnStart(root.wallpaperService.runOnStart ? "false" : "true")
           }
