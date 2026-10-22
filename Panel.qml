@@ -446,6 +446,17 @@ Panel {
           }
         }
 
+        Connections {
+          target: customIntervalField.field.Keys
+          function onPressed(event) {
+            if (event.key !== Qt.Key_Escape && event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter) return
+            if (event.key === Qt.Key_Escape) event.accepted = true
+            Qt.callLater(function() {
+              if (root.opened) keyCatcher.forceActiveFocus()
+            })
+          }
+        }
+
         Dropdown {
           id: marketDropdown
           width: parent.width

@@ -95,6 +95,7 @@ ShellRoot {
         input.testPointerThenKeyboard()
         input.testDropdownFocus()
         input.testDropdownValues()
+        input.testIntervalEditorKeys()
         console.log("UI input tests passed")
       } catch (error) {
         console.error("TEST FAILURE:", error.message)
@@ -178,6 +179,32 @@ ShellRoot {
       root.check(service.market === "en-GB", "Region selection was not applied")
       service.market = "en-CA"
       root.check(region.currentLabel() === "Canada", "Region ignored a service market change")
+    }
+
+    function testIntervalEditorKeys() {
+      var panel = loader.item
+      service.intervalMinutes = 60
+      panel.cursorIndex = panel.customCursorIndex
+      keyClick(Qt.Key_Return)
+      var custom = root.find(panel, "label", "Custom interval (minutes)")
+      root.check(custom.field.activeFocus, "Enter did not begin interval editing")
+      keyClick(Qt.Key_Escape)
+      wait(30)
+      root.check(panel.opened && !custom.field.activeFocus, "Escape did not return to panel navigation")
+      keyClick(Qt.Key_Down)
+      root.check(panel.cursorIndex === panel.marketCursorIndex && service.intervalMinutes === 60,
+        "Down changed the interval instead of navigating after Escape")
+      keyClick(Qt.Key_Up)
+      keyClick(Qt.Key_Return)
+      keyClick(Qt.Key_A, Qt.ControlModifier)
+      keyClick(Qt.Key_7)
+      keyClick(Qt.Key_5)
+      keyClick(Qt.Key_Return)
+      wait(30)
+      root.check(service.intervalMinutes === 75 && !custom.field.activeFocus,
+        "Return did not commit the interval and leave editing")
+      keyClick(Qt.Key_Escape)
+      root.check(!panel.opened, "Escape did not close the panel after editing")
     }
   }
 
