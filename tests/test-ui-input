@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+TEST_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+PROJECT_DIR=$(cd "$TEST_DIR/.." && pwd)
+OMARCHY_ROOT=${OMARCHY_PATH:-/usr/share/omarchy}
+TEST_ROOT=$(mktemp -d /tmp/fresh-wallpaper-input.XXXXXX)
+IMPORT_ROOT="$TEST_ROOT/imports"
+trap 'rm -rf -- "$TEST_ROOT"' EXIT
+
+mkdir -p "$IMPORT_ROOT/qs/Ui" "$TEST_ROOT/runtime"
+chmod 700 "$TEST_ROOT/runtime"
+ln -s "$OMARCHY_ROOT/shell/Commons" "$IMPORT_ROOT/qs/Commons"
+for source in "$OMARCHY_ROOT/shell/Ui/"*; do
+  ln -s "$source" "$IMPORT_ROOT/qs/Ui/"
+done
+rm "$IMPORT_ROOT/qs/Ui/KeyboardPanel.qml"
+cp "$TEST_DIR/fixtures/KeyboardPanel.qml" "$IMPORT_ROOT/qs/Ui/KeyboardPanel.qml"
+
+if ! output=$(
+  QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
+  XDG_RUNTIME_DIR="$TEST_ROOT/runtime" \
+  QML_IMPORT_PATH="$IMPORT_ROOT" QML2_IMPORT_PATH="$IMPORT_ROOT" \
+  FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
+    quickshell --no-color -p "$TEST_DIR/test-ui-input.qml" 2>&1
+); then
+  printf '%s\n' "$output" >&2
+  exit 1
+fi
+
+if ! grep -q 'UI input tests passed' <<<"$output" \
+    || grep -Eq 'TEST FAILURE|WARN scene:|ERROR qml:|CRITICAL|Error loading image' <<<"$output"; then
+  printf '%s\n' "$output" >&2
+  exit 1
+fi
+printf 'UI input tests passed\n'

@@ -93,6 +93,12 @@ Panel {
     cursorIndex = Math.max(0, Math.min(startupCursorIndex, next))
   }
 
+  function restorePanelFocus() {
+    Qt.callLater(function() {
+      if (root.opened && !keyCatcher.blocked) keyCatcher.forceActiveFocus()
+    })
+  }
+
   // Bing's attribution links point at a Bing search about the photo. Older
   // archive responses used site-relative links.
   function bingLink(value) {
@@ -339,7 +345,6 @@ Panel {
             foreground: root.foreground
             fontFamily: root.fontFamily
             bordered: true
-            focusable: true
             enabled: root.wallpaperService && !root.busy
             hasCursor: root.cursorIndex === 0
             onHovered: function(hovered) { if (hovered) root.cursorIndex = 0 }
@@ -396,6 +401,7 @@ Panel {
           foreground: root.foreground
           fontFamily: root.fontFamily
           hasCursor: root.cursorIndex === root.sourceCursorIndex
+          onPopupOpenChanged: if (!popupOpen) root.restorePanelFocus()
           onHovered: function(hovered) { if (hovered) root.cursorIndex = root.sourceCursorIndex }
           onChanged: function(value) {
             if (root.wallpaperService) root.wallpaperService.setProvider(value)
@@ -411,6 +417,7 @@ Panel {
           foreground: root.foreground
           fontFamily: root.fontFamily
           hasCursor: root.cursorIndex === root.frequencyCursorIndex
+          onPopupOpenChanged: if (!popupOpen) root.restorePanelFocus()
           onHovered: function(hovered) { if (hovered) root.cursorIndex = root.frequencyCursorIndex }
           onChanged: function(value) { root.selectFrequency(value) }
         }
@@ -444,6 +451,7 @@ Panel {
           foreground: root.foreground
           fontFamily: root.fontFamily
           hasCursor: root.cursorIndex === root.marketCursorIndex
+          onPopupOpenChanged: if (!popupOpen) root.restorePanelFocus()
           onHovered: function(hovered) { if (hovered) root.cursorIndex = root.marketCursorIndex }
           onChanged: function(value) {
             if (root.wallpaperService) root.wallpaperService.setMarket(value)

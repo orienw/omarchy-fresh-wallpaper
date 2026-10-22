@@ -55,6 +55,7 @@ jobs:
           set -euo pipefail
           tests/test-fetch-wallpaper
           tests/test-service
+          tests/test-ui-input
 
       - name: Run panel smoke tests
         env:
