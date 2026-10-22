@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        omarchy: [v4.0.0, v4.0.3, v4.0.5]
+        omarchy: [v4.0.0, v4.0.3, v4.0.6]
     container: archlinux@sha256:aecf5b39bd3139a951090dfb3d940f9317e4c5fca038c65fb49ac03910f7133e
 
     steps:
