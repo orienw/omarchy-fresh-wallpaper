@@ -240,6 +240,7 @@ ShellRoot {
     }
 
     function testHiddenIntervalFocus() {
+      parkPointer()
       var panel = loader.item
       var custom = root.find(panel, "label", "Custom interval (minutes)")
       service.intervalMinutes = 1425
@@ -299,6 +300,7 @@ ShellRoot {
     }
 
     function testEditorNavigationKeys() {
+      parkPointer()
       var panel = loader.item
       var custom = root.find(panel, "label", "Custom interval (minutes)")
       var cases = [
@@ -325,6 +327,7 @@ ShellRoot {
     }
 
     function testIntervalEditorKeys() {
+      parkPointer()
       var panel = loader.item
       service.intervalMinutes = 60
       panel.cursorIndex = panel.customCursorIndex
@@ -335,8 +338,10 @@ ShellRoot {
       wait(30)
       root.check(panel.opened && !custom.field.activeFocus, "Escape did not return to panel navigation")
       keyClick(Qt.Key_Down)
-      root.check(panel.cursorIndex === panel.marketCursorIndex && service.intervalMinutes === 60,
-        "Down changed the interval instead of navigating after Escape")
+      root.check(service.intervalMinutes === 60,
+        "Down changed the interval after Escape to " + service.intervalMinutes)
+      root.check(panel.cursorIndex === panel.marketCursorIndex,
+        "Down selected cursor " + panel.cursorIndex + " after Escape; expected Region " + panel.marketCursorIndex)
       keyClick(Qt.Key_Up)
       keyClick(Qt.Key_Return)
       keyClick(Qt.Key_A, Qt.ControlModifier)
@@ -385,6 +390,12 @@ ShellRoot {
         "the mouse wheel could not reach the startup toggle")
       mouseClick(startup, startup.width / 2, startup.height / 2)
       root.check(!service.runOnStart, "the scrolled startup toggle did not respond to a click")
+    }
+
+    function parkPointer() {
+      // Keep deferred hover updates from moving the keyboard cursor.
+      mouseMove(window.contentItem, window.width - 1, window.height - 1)
+      wait(0)
     }
 
     function waitForScroll(flick) {
