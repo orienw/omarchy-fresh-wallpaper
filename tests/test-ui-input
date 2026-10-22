@@ -23,7 +23,7 @@ if ! output=$(
   XDG_RUNTIME_DIR="$TEST_ROOT/runtime" \
   QML_IMPORT_PATH="$IMPORT_ROOT" QML2_IMPORT_PATH="$IMPORT_ROOT" \
   FRESH_WALLPAPER_PROJECT_DIR="$PROJECT_DIR" \
-    quickshell --no-color -p "$TEST_DIR/test-ui-input.qml" 2>&1
+    timeout 15 quickshell --no-color -p "$TEST_DIR/test-ui-input.qml" 2>&1
 ); then
   printf '%s\n' "$output" >&2
   exit 1

@@ -96,6 +96,7 @@ ShellRoot {
         input.testDropdownFocus()
         input.testDropdownValues()
         input.testIntervalEditorKeys()
+        input.testShortPanel()
         console.log("UI input tests passed")
       } catch (error) {
         console.error("TEST FAILURE:", error.message)
@@ -205,6 +206,48 @@ ShellRoot {
         "Return did not commit the interval and leave editing")
       keyClick(Qt.Key_Escape)
       root.check(!panel.opened, "Escape did not close the panel after editing")
+    }
+
+    function testShortPanel() {
+      var panel = loader.item
+      window.height = Style.space(300)
+      service.lastError = "A download error with enough detail to wrap onto a second line."
+      service.currentWallpaper = ({copyright: "An image attribution naming the photographer and location."})
+      service.intervalMinutes = 60
+      panel.cursorIndex = 0
+      panel.open()
+      wait(50)
+      var flick = root.find(panel, "flickableDirection", Flickable.VerticalFlick)
+      root.check(flick !== null, "a short panel did not provide scrolling")
+      for (var i = 0; i < panel.startupCursorIndex; i++) {
+        keyClick(Qt.Key_Down)
+        wait(10)
+      }
+      var startup = root.find(panel, "label", "Change on start")
+      var position = startup.mapToItem(flick, 0, 0)
+      root.check(flick.contentY > 0 && position.y >= -1
+        && position.y + startup.height <= flick.height + 1,
+        "keyboard navigation left the startup toggle outside the viewport")
+      keyClick(Qt.Key_Return)
+      root.check(service.runOnStart, "the visible startup toggle could not be activated")
+      mouseWheel(flick, flick.width / 2, flick.height / 2, 0, 1200)
+      waitForScroll(flick)
+      var change = root.find(panel, "text", "Change now")
+      position = change.mapToItem(flick, 0, 0)
+      root.check(position.y >= 0 && position.y + change.height <= flick.height,
+        "the mouse wheel could not return to the wallpaper actions")
+      mouseWheel(flick, flick.width / 2, flick.height / 2, 0, -1200)
+      waitForScroll(flick)
+      position = startup.mapToItem(flick, 0, 0)
+      root.check(position.y >= -1 && position.y + startup.height <= flick.height + 1,
+        "the mouse wheel could not reach the startup toggle")
+      mouseClick(startup, startup.width / 2, startup.height / 2)
+      root.check(!service.runOnStart, "the scrolled startup toggle did not respond to a click")
+    }
+
+    function waitForScroll(flick) {
+      for (var i = 0; flick.moving && i < 50; i++) wait(20)
+      root.check(!flick.moving, "mouse-wheel scrolling did not settle")
     }
   }
 

@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls as QQC
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
@@ -99,6 +100,20 @@ Panel {
     })
   }
 
+  function ensureCursorVisible() {
+    var targets = [changeButton, previousButton, learnMoreButton, providerDropdown, frequencyDropdown]
+    if (customIntervalVisible) targets.push(customIntervalField)
+    targets.push(marketDropdown, startupToggle)
+    var target = targets[cursorIndex]
+    if (!target) return
+    var top = target.mapToItem(panelFlick.contentItem, 0, 0).y
+    var bottom = top + target.height
+    var offset = panelFlick.contentY
+    if (top < offset) offset = top
+    else if (bottom > offset + panelFlick.height) offset = bottom - panelFlick.height
+    panelFlick.contentY = Math.max(0, Math.min(offset, panelFlick.contentHeight - panelFlick.height))
+  }
+
   // Bing's attribution links point at a Bing search about the photo. Older
   // archive responses used site-relative links.
   function bingLink(value) {
@@ -173,7 +188,12 @@ Panel {
     return (retryPending ? "Retrying in " : "Next change in ") + remaining
   }
 
-  onOpenedChanged: if (opened && wallpaperService) wallpaperService.refreshStatus()
+  onOpenedChanged: if (opened) {
+    if (wallpaperService) wallpaperService.refreshStatus()
+    Qt.callLater(ensureCursorVisible)
+  }
+  onCursorIndexChanged: Qt.callLater(ensureCursorVisible)
+  onCustomIntervalVisibleChanged: Qt.callLater(ensureCursorVisible)
   onConfiguredIntervalChanged: {
     if (configuredInterval > 0) customIntervalDraft = configuredInterval
     if (intervalIsPreset) customIntervalRequested = false
@@ -213,8 +233,23 @@ Panel {
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
 
+      Flickable {
+        id: panelFlick
+        anchors.fill: parent
+        contentWidth: width
+        contentHeight: content.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.VerticalFlick
+        interactive: contentHeight > height
+        onHeightChanged: Qt.callLater(root.ensureCursorVisible)
+        onContentHeightChanged: Qt.callLater(root.ensureCursorVisible)
+        QQC.ScrollBar.vertical: QQC.ScrollBar { policy: QQC.ScrollBar.AsNeeded }
+      }
+
       Column {
         id: content
+        parent: panelFlick.contentItem
         width: parent.width
         spacing: Style.space(12)
 
@@ -476,6 +511,7 @@ Panel {
         }
 
         Toggle {
+          id: startupToggle
           width: parent.width
           label: "Change on start"
           description: "Force a new image whenever the Omarchy shell loads."
