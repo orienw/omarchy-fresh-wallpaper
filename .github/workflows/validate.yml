@@ -14,20 +14,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        omarchy: [v4.0.0, v4.0.3, v4.0.6]
+        omarchy: [v4.0.6, v4.5.0]
     container: archlinux@sha256:aecf5b39bd3139a951090dfb3d940f9317e4c5fca038c65fb49ac03910f7133e
 
     steps:
-      - name: Use Qt 6.11 packages for older Omarchy
-        if: matrix.omarchy == 'v4.0.0' || matrix.omarchy == 'v4.0.3'
-        run: >-
-          printf '%s\n' 'Server = https://archive.archlinux.org/repos/2026/09/29/$repo/os/$arch'
-          > /etc/pacman.d/mirrorlist
-
       - name: Install test dependencies
         run: >-
           pacman -Syu --noconfirm --needed
-          curl file git jq libjpeg-turbo python quickshell qt6-declarative qt6-svg weston
+          curl diffutils file git jq libjpeg-turbo python quickshell qt6-declarative qt6-svg weston
 
       - name: Check out the exact revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -37,7 +31,7 @@ jobs:
       - name: Check out Omarchy ${{ matrix.omarchy }}
         run: >-
           git clone --quiet --depth 1 --branch ${{ matrix.omarchy }}
-          https://github.com/basecamp/omarchy.git "$RUNNER_TEMP/omarchy"
+          https://github.com/omacom/omarchy.git "$RUNNER_TEMP/omarchy"
 
       - name: Validate manifest and QML
         env:

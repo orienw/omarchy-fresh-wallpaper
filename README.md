@@ -31,7 +31,7 @@ Other providers can be added behind the existing `provider` setting without chan
 
 ## Requirements
 
-- Omarchy 4.0 or newer
+- Omarchy 4.0.6 or newer
 - `curl`
 - `jq`
 - `djpeg` (from `libjpeg-turbo` 2.1 or newer)
