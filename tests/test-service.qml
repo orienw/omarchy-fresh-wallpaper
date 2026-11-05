@@ -90,6 +90,28 @@ ShellRoot {
         root.fail("monthly preset was not loaded")
         return
       }
+      // A widget that never loads, like one in the tray section with no tray on
+      // the bar, leaves the service to find its settings on its own.
+      var savedConfig = fakeShell.shellConfig
+      var sections = ["centerBegin", "centerEnd", "tray"]
+      for (var s = 0; s < sections.length; s++) {
+        var movedConfig = {bar: {layout: {left: [], center: [], right: []}}, plugins: []}
+        movedConfig.bar.layout[sections[s]] = [{
+          id: "io.github.orienw.fresh-wallpaper",
+          intervalMinutes: 10080,
+          runOnStart: false
+        }]
+        fakeShell.shellConfig = movedConfig
+        if (service.intervalMinutes !== 10080) {
+          root.fail("settings were not found in the " + sections[s] + " section")
+          return
+        }
+      }
+      fakeShell.shellConfig = savedConfig
+      if (service.intervalMinutes !== 43200) {
+        root.fail("settings did not follow the widget back to its section")
+        return
+      }
       if (service.runOnStart || service.lastTrigger !== "") {
         root.fail("change on start was not off by default")
         return
