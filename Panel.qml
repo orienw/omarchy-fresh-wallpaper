@@ -221,7 +221,7 @@ Panel {
     open: root.opened
     focusTarget: keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(400))
-    contentHeight: panel.fittedContentHeight(content.implicitHeight)
+    contentHeight: panel.fittedContentHeight(panelContent.implicitHeight)
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -242,7 +242,7 @@ Panel {
         id: panelFlick
         anchors.fill: parent
         contentWidth: width
-        contentHeight: content.implicitHeight
+        contentHeight: panelContent.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         flickableDirection: Flickable.VerticalFlick
@@ -253,7 +253,7 @@ Panel {
       }
 
       Column {
-        id: content
+        id: panelContent
         parent: panelFlick.contentItem
         width: parent.width
         spacing: Style.space(12)
