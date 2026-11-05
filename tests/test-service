@@ -148,7 +148,7 @@ process_running() {
 
 long_image="$CACHE_DIR/bing-20260803-$(printf 'L%.0s' {1..121})-UHD.jpg"
 cp -- "$TEST_DIR/fixtures/wallpaper.jpg" "$long_image"
-for bounds_case in symlink oversized fifo linked-dir foreign long-name \
+for bounds_case in symlink oversized fifo linked-dir foreign long-name longest-status \
     status-hang status-noisy status-error status-invalid status-empty status-missing \
     status-manual status-scheduled status-backoff hang noisy; do
   bounds_dir="$BOUNDS_STATE/$bounds_case"
@@ -158,6 +158,8 @@ for bounds_case in symlink oversized fifo linked-dir foreign long-name \
   status_mode=""
   status_log=""
   defer=0
+  bounds_cache=$TEST_CACHE
+  bounds_background=$FRESH_WALLPAPER_TEST_BACKGROUND
   mkdir -p "$bounds_state_dir"
   jq -cn --arg path "$FRESH_WALLPAPER_TEST_IMAGE" --arg changedAt "$STATE_TIMESTAMP" \
     '{path: $path, changedAt: $changedAt}' >"$bounds_dir/trusted.json"
@@ -187,6 +189,35 @@ for bounds_case in symlink oversized fifo linked-dir foreign long-name \
       jq -cn --arg path "$untrusted_path" --arg changedAt "$STATE_TIMESTAMP" \
         '{path: $path, changedAt: $changedAt}' >"$bounds_state_dir/current.json"
       ;;
+    longest-status)
+      # State at its limit, and both paths the status adds to it as long as they
+      # can be, in control characters that JSON escapes to six bytes each.
+      segment=$(printf '\001%.0s' {1..200})
+      bounds_cache=$bounds_dir
+      while (( ${#bounds_cache} + 280 < 4095 )); do bounds_cache+="/$segment"; done
+      longest_background=$bounds_dir
+      while (( ${#longest_background} + 215 < 4095 )); do longest_background+="/$segment"; done
+      longest_wallpaper="$bounds_cache/omarchy/fresh-wallpaper/bing-20260801-Test_EN-US0000000000-UHD.jpg"
+      mkdir -p -- "${longest_wallpaper%/*}" "$longest_background"
+      cp -- "$TEST_DIR/fixtures/wallpaper.jpg" "$longest_wallpaper"
+      cp -- "$TEST_DIR/fixtures/wallpaper.jpg" "$longest_background/background.jpg"
+      bounds_background="$bounds_dir/background"
+      ln -s -- "$longest_background/background.jpg" "$bounds_background"
+      longest_state=$(jq -cn --arg path "$longest_wallpaper" --arg changedAt "$STATE_TIMESTAMP" \
+        '{path: $path, changedAt: $changedAt, title: ""}')
+      {
+        printf '%s"' "${longest_state%\"\"\}}"
+        head -c "$((262144 - ${#longest_state} - 1))" /dev/zero | tr '\0' x
+        printf '"}\n'
+      } >"$bounds_state_dir/current.json"
+      # Reaches past what the state alone needs, so the test covers the paths.
+      longest_size=$(XDG_STATE_HOME="$bounds_dir" XDG_CACHE_HOME="$bounds_cache" \
+        bash "$PROJECT_DIR/scripts/fetch-wallpaper" --status --background "$bounds_background" | wc -c)
+      if (( longest_size < 300000 )); then
+        printf 'the longest status only reached %s bytes\n' "$longest_size" >&2
+        exit 1
+      fi
+      ;;
     status-*)
       cp -- "$bounds_dir/trusted.json" "$bounds_state_dir/current.json"
       status_mode=${bounds_case#status-}
@@ -208,6 +239,8 @@ for bounds_case in symlink oversized fifo linked-dir foreign long-name \
     WAYLAND_DISPLAY= \
     XDG_RUNTIME_DIR="$TEST_RUNTIME" \
     XDG_STATE_HOME="$bounds_dir" \
+    XDG_CACHE_HOME="$bounds_cache" \
+    FRESH_WALLPAPER_TEST_BACKGROUND="$bounds_background" \
     FRESH_WALLPAPER_TEST_BOUNDS="$bounds_case" \
     FRESH_WALLPAPER_TEST_HANG="$hang_pid" \
     FRESH_WALLPAPER_TEST_NOISE="$noise" \

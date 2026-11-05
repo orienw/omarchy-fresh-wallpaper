@@ -28,7 +28,9 @@ Panel {
   readonly property string externalBackgroundPath: wallpaperService
     ? String(wallpaperService.externalBackgroundPath || "")
     : ""
-  readonly property bool showingExternalBackground: externalBackgroundPath !== ""
+  readonly property bool showingExternalBackground: wallpaperService
+    ? wallpaperService.hasExternalBackground === true
+    : false
   readonly property string previewPath: showingExternalBackground
     ? externalBackgroundPath
     : wallpaperService ? String(wallpaperService.previewWallpaperPath || "") : ""

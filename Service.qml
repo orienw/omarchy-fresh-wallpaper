@@ -20,12 +20,15 @@ Item {
   property int fetchTimeoutSeconds: 1500
   property int statusTimeoutSeconds: 10
   property int statusRetrySeconds: 30
-  // A status holds current.json, which the helper keeps under 256 KiB, and three paths.
-  readonly property int statusMaxBytes: 278528
+  // A status holds current.json, which the helper keeps under 256 KiB, two paths
+  // that JSON escaping can grow to six times PATH_MAX, and a few short fields.
+  readonly property int statusMaxBytes: 262144 + 2 * 6 * 4096 + 4096
   property string currentBackgroundLink: home + "/.local/state/omarchy/current/background"
   // Both come from the helper's status, which only names files it can preview.
   property string externalBackgroundPath: ""
   property string previewWallpaperPath: ""
+  // Covers any other background, including a video, which has no preview path.
+  property bool hasExternalBackground: false
 
   property var settings: findSettings()
 
@@ -162,6 +165,7 @@ Item {
     recentCount = Math.max(0, Math.floor(Number(status.recentCount)) || 0)
     previewWallpaperPath = String(status.wallpaper || "")
     externalBackgroundPath = String(status.external || "")
+    hasExternalBackground = status.hasExternal === true
     fetchSettling = false
 
     // A saved wallpaper whose file is gone still counts while the desktop has a

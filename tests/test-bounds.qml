@@ -89,6 +89,14 @@ ShellRoot {
         root.finish("")
         return
       }
+      if (root.boundsCase === "longest-status") {
+        // A rejected status keeps retrying, which ends in the timeout below.
+        if (service.statusError !== "" || !service.hasExternalBackground) return
+        stop()
+        root.finish(service.previewWallpaperPath !== "" && service.externalBackgroundPath !== ""
+          && service.lastTrigger === "" ? "" : "the longest valid status lost its paths")
+        return
+      }
       stop()
       if (root.boundsCase === "linked-dir") {
         root.finish(service.lastTrigger === "" && service.lastError !== ""

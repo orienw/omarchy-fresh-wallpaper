@@ -61,7 +61,8 @@ ShellRoot {
       var external = service.externalBackgroundPath
       if (external === "stale") return
       stop()
-      if (root.expectRecovery ? external !== "" : !/\/wallpaper\.jpg$/.test(external)) {
+      if ((root.expectRecovery ? external !== "" : !/\/wallpaper\.jpg$/.test(external))
+          || service.hasExternalBackground === root.expectRecovery) {
         console.error("TEST FAILURE: the panel background state is wrong:", external)
         Qt.quit()
         return

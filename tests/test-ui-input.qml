@@ -16,6 +16,7 @@ ShellRoot {
     property int intervalMinutes: 1440
     property bool runOnStart: false
     property string externalBackgroundPath: ""
+    property bool hasExternalBackground: false
     property string previewWallpaperPath: ""
     property double nextChangeAtMs: 0
     property double retryAfterMs: 0

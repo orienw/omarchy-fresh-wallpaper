@@ -155,6 +155,12 @@ previewable() {
   [[ -f $1 && -s $1 && ! -L $1 ]] && (( $(stat -c %s -- "$1") <= IMAGE_MAX_BYTES ))
 }
 
+# Omarchy can play a video as the background, which a preview cannot decode. These
+# are the extensions Omarchy treats as video.
+is_video() {
+  [[ ${1,,} =~ \.(mp4|m4v|mov|webm|mkv|avi)$ ]]
+}
+
 valid_jpeg() {
   previewable "$1" && djpeg -strict -maxmemory 64m -maxscans 64 -outfile /dev/null "$1" 2>/dev/null
 }
@@ -370,7 +376,8 @@ load_state() {
 # Prints everything the shell shows, so the shell never reads the state files or
 # the paths they name itself: the saved wallpaper, how many applied wallpapers
 # Previous can use, the wallpaper file if it can be previewed, whether the desktop
-# has a background, and that background when it is another previewable file.
+# has a background, whether that background is another file, and that file if it
+# can be previewed.
 print_status() {
   local path=""
   local wallpaper=""
@@ -378,6 +385,7 @@ print_status() {
   local desktop=""
   local external=""
   local has_background=false
+  local has_external=false
 
   current='null'
   recent='[]'
@@ -393,17 +401,22 @@ print_status() {
   fi
   if desktop=$(readlink -e -- "$BACKGROUND_LINK") && [[ -f $desktop && -s $desktop ]]; then
     has_background=true
-    if [[ $desktop != "$wallpaper_file" ]] && previewable "$desktop"; then external=$desktop; fi
+    if [[ $desktop != "$wallpaper_file" ]]; then
+      has_external=true
+      if ! is_video "$desktop" && previewable "$desktop"; then external=$desktop; fi
+    fi
   fi
 
   printf '%s\n' "$current" "$recent" | jq -cn --arg cache "$CACHE_DIR" --arg wallpaper "$wallpaper" \
-    --arg external "$external" --argjson hasBackground "$has_background" "$CACHED_WALLPAPER
+    --arg external "$external" --argjson hasBackground "$has_background" \
+    --argjson hasExternal "$has_external" "$CACHED_WALLPAPER
     input as \$current | input as \$recent | {
       current: (if \$current | cached(\$cache) then \$current else null end),
       recentCount: (\$recent | length),
       wallpaper: \$wallpaper,
       external: \$external,
-      hasBackground: \$hasBackground
+      hasBackground: \$hasBackground,
+      hasExternal: \$hasExternal
     }"
 }
 

@@ -233,6 +233,37 @@ ShellRoot {
       }
       service.statusRead(JSON.stringify({current: savedWallpaper}))
 
+      // A failed read keeps what the panel shows until a status replaces it.
+      service.statusRead(JSON.stringify({
+        current: savedWallpaper,
+        recentCount: 2,
+        wallpaper: root.existingWallpaperPath,
+        external: root.existingWallpaperPath,
+        hasExternal: true
+      }))
+      var failedReads = ["", "{}", "not json"]
+      for (var f = 0; f < failedReads.length; f++) {
+        service.statusRead(failedReads[f])
+        if (!service.hasExternalBackground
+            || service.externalBackgroundPath !== root.existingWallpaperPath
+            || service.previewWallpaperPath !== root.existingWallpaperPath
+            || service.recentCount !== 2) {
+          root.fail("a failed status changed what the panel shows")
+          return
+        }
+      }
+
+      service.statusRead(JSON.stringify({current: savedWallpaper, external: "", hasExternal: true}))
+      if (!service.hasExternalBackground || service.externalBackgroundPath !== "") {
+        root.fail("an outside background with no preview was not reported")
+        return
+      }
+      service.statusRead(JSON.stringify({current: savedWallpaper}))
+      if (service.hasExternalBackground) {
+        root.fail("a replaced outside background stayed reported")
+        return
+      }
+
       if (service.normalizedInterval(525601) !== 525600) {
         root.fail("custom interval maximum was not enforced")
         return
