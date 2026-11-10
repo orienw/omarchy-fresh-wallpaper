@@ -54,7 +54,7 @@ Enabling adds the bar control and downloads the first wallpaper. Later starts re
 
 ## Use
 
-Click the wallpaper icon to open the panel. The panel shows the current image, its attribution, and when the next change is due. Its info button opens Bing's page about the photo, and the settings let you choose the source, frequency, region, and whether to change the wallpaper when Omarchy starts. Bing Daily is the only source in version 0.1, with more providers planned. Frequency defaults to Daily, with simple Manual, Weekly, and Monthly choices alongside it.
+Click the wallpaper icon to open the panel. The panel shows the current image, its attribution, and when the next change is due. Its info button opens Bing's page about the photo, and the settings let you choose the source, frequency, region, and whether to change the wallpaper when Omarchy starts. Bing Daily is the only source, with more providers planned. Frequency defaults to Daily, with simple Manual, Weekly, and Monthly choices alongside it.
 
 Daily means 24 hours after the last successful wallpaper change, Weekly means 7 days, and Monthly means 30 days. A successful **Change now** starts that interval again, so these are elapsed schedules rather than fixed calendar times.
 
@@ -107,7 +107,7 @@ Advanced users can set the maximum number of downloaded wallpapers retained in t
 omarchy-shell fresh-wallpaper setCacheLimit 30
 ```
 
-The provider setting is ready for future sources. Version 0.1 supports Bing:
+The provider setting is ready for future sources. Bing is the only supported provider:
 
 ```sh
 omarchy-shell fresh-wallpaper setProvider bing
