@@ -16,6 +16,8 @@ BarWidget {
     : false
 
   function injectPanel() {
+    // Omarchy gives services a bar config one change behind, so the widget
+    // passes its own settings on.
     if (wallpaperService) wallpaperService.settings = root.settings
     var target = panelLoader.item
     if (!target) return
