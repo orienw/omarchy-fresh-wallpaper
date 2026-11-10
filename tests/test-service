@@ -43,6 +43,7 @@ if [[ -f $OMARCHY_ROOT/shell/services/PluginShellApi.qml ]]; then
   shell_apis+=("file://$OMARCHY_ROOT/shell/services/PluginShellApi.qml")
 fi
 for shell_api in "${shell_apis[@]}"; do
+  : >"$TEST_STATE/previous.log"
   STATE_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   jq -cn --arg path "$FRESH_WALLPAPER_TEST_IMAGE" --arg changedAt "$STATE_TIMESTAMP" \
     '{path: $path, changedAt: $changedAt}' > "$STATE_DIR/current.json"
@@ -52,12 +53,17 @@ for shell_api in "${shell_apis[@]}"; do
     XDG_STATE_HOME="$TEST_STATE" \
     PATH="$TEST_DIR/mocks:$PATH" \
     FRESH_WALLPAPER_TEST_SHELL_API="$shell_api" \
+    FRESH_WALLPAPER_TEST_FETCH_LOG="$TEST_STATE/previous.log" \
     QT_QPA_PLATFORM=offscreen \
       quickshell --no-color -p "$TEST_DIR/test-service.qml" 2>&1
   )
 
   if ! grep -q "service schedule tests passed" <<<"$output"; then
     printf '%s\n' "$output" >&2
+    exit 1
+  fi
+  if [[ $(cat "$TEST_STATE/previous.log") != "--previous --background $FRESH_WALLPAPER_TEST_BACKGROUND" ]]; then
+    printf 'Previous did not pass the current background link to the helper\n' >&2
     exit 1
   fi
 done

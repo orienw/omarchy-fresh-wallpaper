@@ -62,7 +62,7 @@ Selecting Manual cancels pending retries from scheduled rotations. First-run and
 
 Press **Change now** in the panel or middle-click the bar icon to apply another wallpaper immediately. The undo button next to it restores the wallpaper shown before, and pressing it again keeps going back through the last few changes.
 
-A theme switch or another tool can replace the background between changes. The panel then shows that background instead of the last Bing image, and the next scheduled change or **Change now** brings Fresh Wallpaper back. Videos and images over 50 MiB show a placeholder in place of the preview.
+A theme switch or another tool can replace the background between changes. The panel then shows that background instead of the last Bing image, and the next scheduled change or **Change now** brings Fresh Wallpaper back. With an outside background showing, the undo button brings back the last Fresh Wallpaper image. Videos and images over 50 MiB show a placeholder in place of the preview.
 
 The shell commands remain available for shortcuts and automation:
 

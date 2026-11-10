@@ -22,7 +22,7 @@ use_case() {
 }
 
 fetch() {
-  "$PROJECT_DIR/scripts/fetch-wallpaper" --provider bing --market en-US "$@"
+  "$PROJECT_DIR/scripts/fetch-wallpaper" --provider bing --market en-US --background "$XDG_STATE_HOME/background" "$@"
 }
 
 use_case rotation
@@ -172,6 +172,55 @@ for pick in 1 2; do
 done
 rm -f -- "${picks[3]}"
 [[ $(fetch --previous | jq -r '.path') == "${picks[0]}" ]]
+
+# An outside background restores the newest applied image without consuming it.
+for count in 2 1; do
+  use_case "previous-external-$count"
+  for ((pick = 0; pick < count; pick++)); do fetch >/dev/null; done
+  state_dir="$XDG_STATE_HOME/omarchy/fresh-wallpaper"
+  expected=$(jq -c '[.[].path]' "$state_dir/recent.json")
+  newest=$(jq -r '.[0].path' "$state_dir/recent.json")
+  ln -s -- "$TEST_FIXTURE_DIR/wallpaper.jpg" "$XDG_STATE_HOME/background"
+  # An interrupted save can leave current.json behind recent.json.
+  jq '.[-1]' "$state_dir/recent.json" >"$state_dir/current.json"
+  restored=$(fetch --previous | jq -r '.path')
+  if [[ $restored != "$newest" || $(jq -c '[.[].path]' "$state_dir/recent.json") != "$expected" ]]; then
+    printf 'Previous skipped the newest wallpaper or lost history after an outside background\n' >&2
+    exit 1
+  fi
+  [[ $(tail -n 1 "$TEST_APPLY_LOG") == "$newest" ]]
+  ln -sfn -- "$newest" "$XDG_STATE_HOME/background"
+  if (( count == 2 )); then
+    [[ $(fetch --previous | jq -r '.path') == "$(jq -r '.[1]' <<<"$expected")" ]]
+    [[ $(jq 'length' "$state_dir/recent.json") -eq 1 ]]
+  elif fetch --previous >/dev/null 2>&1; then
+    printf 'Previous restored the only wallpaper when it was already showing\n' >&2
+    exit 1
+  fi
+done
+
+# Unusable background links keep the existing one-step-back behavior.
+for kind in missing broken empty directory fifo; do
+  use_case "previous-background-$kind"
+  older=$(fetch | jq -r '.path')
+  fetch >/dev/null
+  target="$XDG_STATE_HOME/target"
+  case $kind in
+    missing) ;;
+    broken) ln -s -- "$target" "$XDG_STATE_HOME/background" ;;
+    empty) touch "$target"; ln -s -- "$target" "$XDG_STATE_HOME/background" ;;
+    directory) mkdir "$target"; ln -s -- "$target" "$XDG_STATE_HOME/background" ;;
+    fifo) mkfifo "$target"; ln -s -- "$target" "$XDG_STATE_HOME/background" ;;
+  esac
+  [[ $(fetch --previous | jq -r '.path') == "$older" ]]
+done
+
+use_case previous-external-corrupt
+older=$(fetch | jq -r '.path')
+newest=$(fetch | jq -r '.path')
+printf 'not a JPEG\n' >"$newest"
+ln -s -- "$TEST_FIXTURE_DIR/wallpaper.jpg" "$XDG_STATE_HOME/background"
+[[ $(fetch --previous | jq -r '.path') == "$older" ]]
 
 use_case previous-no-repeat
 for pick in 1 2 3 4; do
@@ -342,7 +391,7 @@ refresh() {
 }
 previous_rejects() {
   local status=0
-  timeout 20 "$PROJECT_DIR/scripts/fetch-wallpaper" --previous >/dev/null 2>&1 || status=$?
+  timeout 20 "$PROJECT_DIR/scripts/fetch-wallpaper" --previous --background "$XDG_STATE_HOME/background" >/dev/null 2>&1 || status=$?
   if (( status != 1 )); then
     printf 'Previous exited %s with %s\n' "$status" "$1" >&2
     exit 1

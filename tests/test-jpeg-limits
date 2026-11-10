@@ -43,7 +43,7 @@ export PATH="$TEST_ROOT/bin:$PROJECT_DIR/tests/mocks:$PATH"
 
 reject_image() {
   local result=0
-  timeout 10 "$HELPER" "$@" >"$TEST_ROOT/result" 2>"$TEST_ROOT/error" || result=$?
+  timeout 10 "$HELPER" --background "$TEST_ROOT/background" "$@" >"$TEST_ROOT/result" 2>"$TEST_ROOT/error" || result=$?
   if (( result == 0 || result == 124 )) || [[ -s $TEST_APPLY_LOG ]] \
       || ! grep -Fq "$expected_error" "$TEST_DJPEG_LOG"; then
     printf '%s %s: JPEG resource limit was not enforced (exit %s)\n' "$kind" "$*" "$result" >&2

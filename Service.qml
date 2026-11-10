@@ -81,7 +81,7 @@ Item {
   // recent.json is the record the helper's Previous trusts, so availability
   // follows it rather than current.json.
   property int recentCount: 0
-  readonly property bool previousAvailable: recentCount > 1
+  readonly property bool previousAvailable: recentCount > 1 || (recentCount === 1 && hasExternalBackground)
   // A run counts until its status lands, so the panel never flashes the old wallpaper.
   property bool fetchSettling: false
   readonly property bool running: fetchProcess.running || fetchSettling
@@ -300,7 +300,7 @@ Item {
     if (!initialized || sourceDir === "") return "not ready"
     if (fetchProcess.running) return "already running"
     if (!previousAvailable) return "error: no previous wallpaper is available"
-    return runHelper("previous", ["--previous"])
+    return runHelper("previous", ["--previous", "--background", currentBackgroundLink])
   }
 
   function runHelper(trigger, args) {

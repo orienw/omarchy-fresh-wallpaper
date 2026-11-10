@@ -382,6 +382,33 @@ ShellRoot {
         return
       }
 
+      service.recentCount = 0
+      service.hasExternalBackground = true
+      if (service.previousAvailable) {
+        root.fail("an outside background enabled Previous without any history")
+        return
+      }
+      service.recentCount = 1
+      if (!service.previousAvailable || service.startPrevious() !== "started") {
+        root.fail("an outside background did not enable Previous with one wallpaper")
+        return
+      }
+      previousTimer.start()
+    }
+  }
+
+  Timer {
+    id: previousTimer
+    interval: 25
+    repeat: true
+    onTriggered: {
+      var service = serviceLoader.item
+      if (service.running) return
+      stop()
+      if (service.lastTrigger !== "previous" || service.lastError !== "") {
+        root.fail("restoring the last wallpaper from an outside background failed")
+        return
+      }
       console.log("service schedule tests passed")
       root.finished = true
       Qt.quit()

@@ -29,7 +29,7 @@ Options:
   --no-apply                     Download and report a wallpaper without applying it
   --previous                     Restore the wallpaper applied before the current one
   --status                       Print the saved wallpaper state for the shell
-  --background <path>            Omarchy's background link, checked by --status
+  --background <path>            Omarchy's background link, checked by --status and --previous
   -h, --help                     Show this help
 USAGE
 }
@@ -373,6 +373,20 @@ load_state() {
   fi
 }
 
+# Share the desktop comparison between status and Previous. A missing, empty,
+# or non-regular background is not an outside background.
+read_background() {
+  local wallpaper_file=""
+  desktop=$(readlink -e -- "$BACKGROUND_LINK") || desktop=""
+  has_background=false
+  has_external=false
+  if [[ -f $desktop && -s $desktop ]]; then
+    has_background=true
+    wallpaper_file=$(readlink -e -- "$1") || wallpaper_file=""
+    [[ $desktop == "$wallpaper_file" ]] || has_external=true
+  fi
+}
+
 # Prints everything the shell shows, so the shell never reads the state files or
 # the paths they name itself: the saved wallpaper, how many applied wallpapers
 # Previous can use, the wallpaper file if it can be previewed, whether the desktop
@@ -381,7 +395,7 @@ load_state() {
 print_status() {
   local path=""
   local wallpaper=""
-  local wallpaper_file=""
+  local wallpaper_path=""
   local desktop=""
   local external=""
   local has_background=false
@@ -397,14 +411,11 @@ print_status() {
   fi
   if (( cache_open )) && [[ -n $path ]]; then
     if previewable "$CACHE_FILES/${path##*/}"; then wallpaper=$path; fi
-    wallpaper_file=$(readlink -e -- "$CACHE_FILES/${path##*/}") || wallpaper_file=""
+    wallpaper_path="$CACHE_FILES/${path##*/}"
   fi
-  if desktop=$(readlink -e -- "$BACKGROUND_LINK") && [[ -f $desktop && -s $desktop ]]; then
-    has_background=true
-    if [[ $desktop != "$wallpaper_file" ]]; then
-      has_external=true
-      if ! is_video "$desktop" && previewable "$desktop"; then external=$desktop; fi
-    fi
+  read_background "$wallpaper_path"
+  if [[ $has_external == true ]] && ! is_video "$desktop" && previewable "$desktop"; then
+    external=$desktop
   fi
 
   printf '%s\n' "$current" "$recent" | jq -cn --arg cache "$CACHE_DIR" --arg wallpaper "$wallpaper" \
@@ -445,10 +456,13 @@ load_state
 if (( PREVIOUS )); then
   recent_count=$(jq 'length' <<<"$recent")
   current_path=$(jq -r '.[0].path // ""' <<<"$recent")
+  read_background "$CACHE_FILES/${current_path##*/}"
+  first_index=1
+  [[ $has_external != true ]] || first_index=0
   restore_index=""
-  for ((i = 1; i < recent_count; i++)); do
+  for ((i = first_index; i < recent_count; i++)); do
     candidate_path=$(jq -r --argjson i "$i" '.[$i].path' <<<"$recent")
-    if [[ $candidate_path != "$current_path" ]] && valid_jpeg "$CACHE_FILES/${candidate_path##*/}"; then
+    if [[ $i == 0 || $candidate_path != "$current_path" ]] && valid_jpeg "$CACHE_FILES/${candidate_path##*/}"; then
       restore_index=$i
       break
     fi

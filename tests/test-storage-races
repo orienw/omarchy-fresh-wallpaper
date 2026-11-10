@@ -62,7 +62,7 @@ esac
 MOCK
 chmod +x "$TEST_ROOT/bin/swap-tool"
 
-fetch() { "$HELPER" "$@"; }
+fetch() { "$HELPER" --background "$case_dir/background" "$@"; }
 
 count=0
 for storage in state cache; do
