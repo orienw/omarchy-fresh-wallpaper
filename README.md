@@ -56,7 +56,7 @@ Enabling adds the bar control and downloads the first wallpaper. Later starts re
 
 Click the wallpaper icon to open the panel. The panel shows the current image, its attribution, and when the next change is due. Its info button opens Bing's page about the photo, and the settings let you choose the source, frequency, region, and whether to change the wallpaper when Omarchy starts. Bing Daily is the only source, with more providers planned. Frequency defaults to Daily, with simple Manual, Weekly, and Monthly choices alongside it.
 
-Daily means 24 hours after the last successful wallpaper change, Weekly means 7 days, and Monthly means 30 days. A successful **Change now** starts that interval again, so these are elapsed schedules rather than fixed calendar times.
+Daily means 24 hours after the last successful wallpaper change, Weekly means 7 days, and Monthly means 30 days. A successful **Change now** starts that interval again, so these are elapsed schedules rather than fixed calendar times. Choosing a new frequency does not change the wallpaper right away, and an interval already past counts from when it was chosen.
 
 Selecting Manual cancels pending retries from scheduled rotations. First-run and Change on start updates can still retry while offline.
 

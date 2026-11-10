@@ -69,6 +69,7 @@ Item {
   property int consecutiveFailures: 0
   property bool failureNotified: false
   property double scheduleOriginMs: 0
+  property double intervalOriginMs: 0
   property double retryAfterMs: 0
   property string retryOrigin: ""
   property bool startupResolved: false
@@ -254,7 +255,7 @@ Item {
   function scheduledAtMs() {
     if (retryAfterMs > 0) return retryAfterMs
     if (intervalMinutes <= 0) return 0
-    return lastChangeMs() + intervalMinutes * 60000
+    return Math.max(lastChangeMs(), intervalOriginMs) + intervalMinutes * 60000
   }
 
   function armSchedule() {
@@ -405,7 +406,14 @@ Item {
     var minutes = Math.floor(Number(value))
     if (!isFinite(minutes) || minutes < 0 || (minutes > 0 && minutes < 15) || minutes > 525600)
       return "error: interval must be 0 or 15-525600 minutes"
+    var changed = minutes !== intervalMinutes
     if (!persistSetting("intervalMinutes", minutes)) return "error: setting could not be saved"
+    if (changed) {
+      // Only explicit choices can defer an overdue interval. Always compare with
+      // the real last change so switching frequencies never ratchets it forward.
+      var now = Date.now()
+      intervalOriginMs = minutes > 0 && lastChangeMs() + minutes * 60000 <= now ? now : 0
+    }
     return String(minutes)
   }
 

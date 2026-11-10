@@ -11,11 +11,12 @@ TEST_CACHE=$(mktemp -d /tmp/fresh-wallpaper-cache.XXXXXX)
 FIRST_RUN_STATE=$(mktemp -d /tmp/fresh-wallpaper-first-run-state.XXXXXX)
 DUE_STARTUP_STATE=$(mktemp -d /tmp/fresh-wallpaper-due-startup-state.XXXXXX)
 DUE_STARTUP_LOG=$(mktemp /tmp/fresh-wallpaper-due-startup-log.XXXXXX)
+FREQUENCY_STATE=$(mktemp -d /tmp/fresh-wallpaper-frequency.XXXXXX)
 OFFLINE_STATE=$(mktemp -d /tmp/fresh-wallpaper-offline-state.XXXXXX)
 RECOVERY_STATE=$(mktemp -d /tmp/fresh-wallpaper-recovery.XXXXXX)
 BOUNDS_STATE=$(mktemp -d /tmp/fresh-wallpaper-bounds.XXXXXX)
 trap 'rm -rf -- "$TEST_RUNTIME" "$TEST_STATE" "$TEST_CACHE" "$FIRST_RUN_STATE" \
-  "$DUE_STARTUP_STATE" "$OFFLINE_STATE" "$RECOVERY_STATE" "$BOUNDS_STATE"; rm -f -- "$DUE_STARTUP_LOG"' EXIT
+  "$DUE_STARTUP_STATE" "$FREQUENCY_STATE" "$OFFLINE_STATE" "$RECOVERY_STATE" "$BOUNDS_STATE"; rm -f -- "$DUE_STARTUP_LOG"' EXIT
 
 # The service only trusts wallpapers in the helper's cache.
 export XDG_CACHE_HOME="$TEST_CACHE"
@@ -60,6 +61,26 @@ for shell_api in "${shell_apis[@]}"; do
     exit 1
   fi
 done
+
+mkdir -p "$FREQUENCY_STATE/omarchy/fresh-wallpaper"
+jq -cn --arg path "$FRESH_WALLPAPER_TEST_IMAGE" --arg changedAt "$(date -u -d '3 hours ago' +%Y-%m-%dT%H:%M:%SZ)" \
+  '{path: $path, changedAt: $changedAt}' >"$FREQUENCY_STATE/omarchy/fresh-wallpaper/current.json"
+frequency_output=$(
+  WAYLAND_DISPLAY= \
+  XDG_RUNTIME_DIR="$TEST_RUNTIME" \
+  XDG_STATE_HOME="$FREQUENCY_STATE" \
+  FRESH_WALLPAPER_TEST_FETCH_LOG="$FREQUENCY_STATE/fetch.log" \
+  QT_QPA_PLATFORM=offscreen \
+    quickshell --no-color -p "$TEST_DIR/test-frequency.qml" 2>&1
+)
+if ! grep -q 'service frequency tests passed' <<<"$frequency_output"; then
+  printf '%s\n' "$frequency_output" >&2
+  exit 1
+fi
+if [[ $(wc -l <"$FREQUENCY_STATE/fetch.log") -ne 1 ]]; then
+  printf 'choosing a frequency started an extra fetch\n' >&2
+  exit 1
+fi
 
 first_run_output=$(
   WAYLAND_DISPLAY= \
@@ -266,4 +287,4 @@ for bounds_case in symlink oversized fifo linked-dir foreign long-name longest-s
   fi
 done
 
-printf 'service schedule, first-run, startup, offline, recovery, and bounds tests passed\n'
+printf 'service schedule, frequency, first-run, startup, offline, recovery, and bounds tests passed\n'
