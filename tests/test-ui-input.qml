@@ -48,7 +48,8 @@ ShellRoot {
 
   QtObject {
     id: fakeShell
-    function serviceFor(id) { return service }
+    property bool available: true
+    function serviceFor(id) { return available ? service : null }
   }
 
   QtObject {
@@ -256,6 +257,25 @@ ShellRoot {
       root.check(service.market === "en-US" && region.currentLabel() === "United States",
         "a rejected region remained selected")
       service.rejectWrites = false
+
+      service.intervalMinutes = 1440
+      service.market = "en-US"
+      fakeShell.available = false
+      mouseClick(frequency, frequency.width / 2, frequency.height - Style.spacing.controlHeight / 2)
+      wait(30)
+      keyClick(Qt.Key_Down)
+      keyClick(Qt.Key_Return)
+      wait(30)
+      mouseClick(region, region.width / 2, region.height - Style.spacing.controlHeight / 2)
+      wait(30)
+      keyClick(Qt.Key_Down)
+      keyClick(Qt.Key_Return)
+      wait(30)
+      fakeShell.available = true
+      root.check(service.intervalMinutes === 1440 && frequency.currentLabel() === "Daily",
+        "Frequency kept a choice made while the service was unavailable")
+      root.check(service.market === "en-US" && region.currentLabel() === "United States",
+        "Region kept a choice made while the service was unavailable")
       service.intervalMinutes = 10080
       service.market = "en-CA"
       root.check(frequency.currentLabel() === "Weekly" && region.currentLabel() === "Canada",

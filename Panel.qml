@@ -46,6 +46,8 @@ Panel {
   readonly property color foreground: bar ? bar.foreground : Commons.Color.foreground
   readonly property color urgent: bar ? bar.urgent : Commons.Color.urgent
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
+  readonly property string configuredProvider: wallpaperService ? wallpaperService.provider : "bing"
+  readonly property string configuredMarket: wallpaperService ? wallpaperService.market : "en-US"
   readonly property int configuredInterval: wallpaperService
     ? wallpaperService.intervalMinutes
     : 1440
@@ -409,7 +411,7 @@ Panel {
           width: parent.width
           label: "Source"
           Binding on value {
-            value: root.wallpaperService ? root.wallpaperService.provider : "bing"
+            value: root.configuredProvider
           }
           options: [
             { value: "bing", label: "Bing Daily (UHD)" }
@@ -420,10 +422,9 @@ Panel {
           onPopupOpenChanged: if (!popupOpen) root.restorePanelFocus()
           onHovered: function(hovered) { if (hovered) root.cursorIndex = root.sourceCursorIndex }
           onChanged: function(value) {
-            if (root.wallpaperService) {
-              var result = root.wallpaperService.setProvider(value)
-              if (String(result).indexOf("error:") === 0) providerDropdown.value = root.wallpaperService.provider
-            }
+            // The dropdown shows a choice as soon as it is picked, so one that was not saved is put back.
+            var result = root.wallpaperService ? root.wallpaperService.setProvider(value) : "error:"
+            if (String(result).indexOf("error:") === 0) providerDropdown.value = root.configuredProvider
           }
         }
 
@@ -441,10 +442,8 @@ Panel {
           onPopupOpenChanged: if (!popupOpen) root.restorePanelFocus()
           onHovered: function(hovered) { if (hovered) root.cursorIndex = root.frequencyCursorIndex }
           onChanged: function(value) {
-            if (root.wallpaperService) {
-              var result = root.wallpaperService.setIntervalMinutes(value)
-              if (String(result).indexOf("error:") === 0) frequencyDropdown.value = String(root.configuredInterval)
-            }
+            var result = root.wallpaperService ? root.wallpaperService.setIntervalMinutes(value) : "error:"
+            if (String(result).indexOf("error:") === 0) frequencyDropdown.value = String(root.configuredInterval)
           }
         }
 
@@ -453,7 +452,7 @@ Panel {
           width: parent.width
           label: "Region"
           Binding on value {
-            value: root.wallpaperService ? root.wallpaperService.market : "en-US"
+            value: root.configuredMarket
           }
           options: root.marketOptions
           foreground: root.foreground
@@ -462,10 +461,8 @@ Panel {
           onPopupOpenChanged: if (!popupOpen) root.restorePanelFocus()
           onHovered: function(hovered) { if (hovered) root.cursorIndex = root.marketCursorIndex }
           onChanged: function(value) {
-            if (root.wallpaperService) {
-              var result = root.wallpaperService.setMarket(value)
-              if (String(result).indexOf("error:") === 0) marketDropdown.value = root.wallpaperService.market
-            }
+            var result = root.wallpaperService ? root.wallpaperService.setMarket(value) : "error:"
+            if (String(result).indexOf("error:") === 0) marketDropdown.value = root.configuredMarket
           }
         }
 
