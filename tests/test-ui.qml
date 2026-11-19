@@ -128,6 +128,7 @@ ShellRoot {
       }
 
       stop()
+      fakeService.market = root.untrustedMarkup
       fakeService.currentWallpaper = ({
         path: Quickshell.env("FRESH_WALLPAPER_TEST_IMAGE"),
         title: root.untrustedMarkup,

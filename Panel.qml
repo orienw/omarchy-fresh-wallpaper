@@ -252,6 +252,7 @@ Panel {
             Text {
               anchors.centerIn: parent
               visible: root.previewPlaceholderVisible
+              textFormat: Text.PlainText
               text: ""
               color: Qt.darker(root.foreground, 1.4)
               font.family: root.fontFamily
@@ -284,6 +285,7 @@ Panel {
                 : (root.showingExternalBackground
                   ? "Set outside Fresh Wallpaper"
                   : root.changedLabel(root.currentWallpaper.changedAt))
+              textFormat: Text.PlainText
               color: Qt.darker(root.foreground, 1.4)
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -294,6 +296,7 @@ Panel {
               visible: text !== ""
               width: parent.width
               text: root.busy ? "" : root.nextChangeLabel()
+              textFormat: Text.PlainText
               color: Qt.darker(root.foreground, 1.4)
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
@@ -302,7 +305,8 @@ Panel {
 
             Text {
               width: parent.width
-              text: "BING DAILY  ·  " + (root.wallpaperService ? root.wallpaperService.market : "en-US")
+              text: "BING DAILY  ·  " + root.configuredMarket
+              textFormat: Text.PlainText
               color: Qt.darker(root.foreground, 1.5)
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
