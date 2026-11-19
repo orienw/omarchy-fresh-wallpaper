@@ -93,8 +93,17 @@ Item {
     return value === undefined || value === null ? fallback : value
   }
 
+  // Number("") is 0, which would read a blank setting as a real value.
+  function settingNumber(value) {
+    return String(value).trim() === "" ? NaN : Number(value)
+  }
+
+  function wholeNumber(value) {
+    return /^\d+$/.test(String(value).trim()) ? Number(value) : NaN
+  }
+
   function intSetting(name, fallback, minimum, maximum) {
-    var value = Math.floor(Number(setting(name, fallback)))
+    var value = Math.floor(settingNumber(setting(name, fallback)))
     if (!isFinite(value)) value = fallback
     return Math.max(minimum, Math.min(maximum, value))
   }
@@ -109,7 +118,7 @@ Item {
   }
 
   function normalizedInterval(value) {
-    var minutes = Math.floor(Number(value))
+    var minutes = Math.floor(settingNumber(value))
     if (!isFinite(minutes)) return 1440
     if (minutes === 0) return 0
     return Math.max(15, Math.min(525600, minutes))
@@ -403,8 +412,8 @@ Item {
   }
 
   function setIntervalMinutes(value) {
-    var minutes = Math.floor(Number(value))
-    if (!isFinite(minutes) || minutes < 0 || (minutes > 0 && minutes < 15) || minutes > 525600)
+    var minutes = wholeNumber(value)
+    if (!isFinite(minutes) || (minutes > 0 && minutes < 15) || minutes > 525600)
       return "error: interval must be 0 or 15-525600 minutes"
     var changed = minutes !== intervalMinutes
     if (!persistSetting("intervalMinutes", minutes)) return "error: setting could not be saved"
@@ -435,7 +444,7 @@ Item {
   }
 
   function setCacheLimit(value) {
-    var limit = Math.floor(Number(value))
+    var limit = wholeNumber(value)
     if (!isFinite(limit) || limit < 8 || limit > 100)
       return "error: cache limit must be 8-100 wallpapers"
     if (!persistSetting("cacheLimit", limit)) return "error: setting could not be saved"

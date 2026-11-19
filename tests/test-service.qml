@@ -292,9 +292,27 @@ ShellRoot {
         root.fail("out-of-range interval was accepted")
         return
       }
+      var malformed = ["", " ", "0.5", "525600.9", "1e3", "-15", "0x20", "abc"]
+      for (var m = 0; m < malformed.length; m++) {
+        if (service.setIntervalMinutes(malformed[m]).indexOf("error:") !== 0
+            || fakeShell.savedSettings.intervalMinutes !== 525600) {
+          root.fail("malformed interval was accepted: '" + malformed[m] + "'")
+          return
+        }
+      }
+      if (service.normalizedInterval("") !== 1440
+          || service.normalizedInterval(" ") !== 1440
+          || service.normalizedInterval(0.5) !== 0
+          || service.normalizedInterval(90.9) !== 90
+          || service.normalizedInterval("0") !== 0) {
+        root.fail("a malformed saved interval was not normalized")
+        return
+      }
       if (service.setCacheLimit("8") !== "8"
           || fakeShell.savedSettings.cacheLimit !== 8
-          || service.setCacheLimit("7").indexOf("error:") !== 0) {
+          || service.setCacheLimit("7").indexOf("error:") !== 0
+          || service.setCacheLimit("100.9").indexOf("error:") !== 0
+          || service.setCacheLimit("").indexOf("error:") !== 0) {
         root.fail("cache limit validation or persistence is incorrect")
         return
       }
