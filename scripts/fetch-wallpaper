@@ -155,10 +155,26 @@ previewable() {
   [[ -f $1 && -s $1 && ! -L $1 ]] && (( $(stat -c %s -- "$1") <= IMAGE_MAX_BYTES ))
 }
 
-# Omarchy can play a video as the background, which a preview cannot decode. These
-# are the extensions Omarchy treats as video.
-is_video() {
-  [[ ${1,,} =~ \.(mp4|m4v|mov|webm|mkv|avi)$ ]]
+# On a scaled display Qt can load a companion file in place of the image it is
+# given: the same path with @2x through @9x before its last dot, or before a ".9"
+# ahead of that dot. Nothing here checks that file, so a wallpaper that has one
+# is not named for a preview.
+scaled_companion() {
+  local stem=$1
+  local suffix=""
+  local scale
+  if [[ $1 == *.* ]]; then
+    stem=${1%.*}
+    suffix=.${1##*.}
+    if [[ $stem == *.9 ]]; then
+      stem=${stem%.9}
+      suffix=.9$suffix
+    fi
+  fi
+  for scale in {2..9}; do
+    [[ ! -e $stem@${scale}x$suffix ]] || return 0
+  done
+  return 1
 }
 
 valid_jpeg() {
@@ -389,15 +405,16 @@ read_background() {
 
 # Prints everything the shell shows, so the shell never reads the state files or
 # the paths they name itself: the saved wallpaper, how many applied wallpapers
-# Previous can use, the wallpaper file if it can be previewed, whether the desktop
-# has a background, whether that background is another file, and that file if it
-# can be previewed.
+# Previous can use, the wallpaper file if it can be previewed, whether that file
+# is in the cache at all, whether the desktop has a background, and whether that
+# background is another file. Another file is never named: it can be anything,
+# and Qt picks a decoder from its content.
 print_status() {
   local path=""
   local wallpaper=""
   local wallpaper_path=""
   local desktop=""
-  local external=""
+  local cached=false
   local has_background=false
   local has_external=false
 
@@ -410,22 +427,22 @@ print_status() {
     fail "could not open the plugin cache or state directory safely"
   fi
   if (( cache_open )) && [[ -n $path ]]; then
-    if previewable "$CACHE_FILES/${path##*/}"; then wallpaper=$path; fi
+    if previewable "$CACHE_FILES/${path##*/}"; then
+      cached=true
+      scaled_companion "$CACHE_FILES/${path##*/}" || wallpaper=$path
+    fi
     wallpaper_path="$CACHE_FILES/${path##*/}"
   fi
   read_background "$wallpaper_path"
-  if [[ $has_external == true ]] && ! is_video "$desktop" && previewable "$desktop"; then
-    external=$desktop
-  fi
 
   printf '%s\n' "$current" "$recent" | jq -cn --arg cache "$CACHE_DIR" --arg wallpaper "$wallpaper" \
-    --arg external "$external" --argjson hasBackground "$has_background" \
+    --argjson cached "$cached" --argjson hasBackground "$has_background" \
     --argjson hasExternal "$has_external" "$CACHED_WALLPAPER
     input as \$current | input as \$recent | {
       current: (if \$current | cached(\$cache) then \$current else null end),
       recentCount: (\$recent | length),
       wallpaper: \$wallpaper,
-      external: \$external,
+      cached: \$cached,
       hasBackground: \$hasBackground,
       hasExternal: \$hasExternal
     }"

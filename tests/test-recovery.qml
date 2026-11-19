@@ -4,7 +4,9 @@ import Quickshell
 ShellRoot {
   id: root
 
-  readonly property bool expectRecovery: Quickshell.env("FRESH_WALLPAPER_TEST_RECOVERY") === "missing"
+  readonly property string recoveryCase: Quickshell.env("FRESH_WALLPAPER_TEST_RECOVERY")
+  readonly property bool expectRecovery: recoveryCase === "missing"
+  readonly property bool expectExternal: recoveryCase === "replaced" || recoveryCase === "missing-cache"
 
   QtObject {
     id: fakeShell
@@ -42,10 +44,10 @@ ShellRoot {
         console.error("TEST FAILURE: the missing cached wallpaper was not recovered")
         Qt.quit()
       } else if (!root.expectRecovery && service.lastTrigger !== "") {
-        console.error("TEST FAILURE: recovery replaced an external background")
+        console.error("TEST FAILURE: an update started with nothing missing:", service.lastTrigger)
         Qt.quit()
       } else {
-        service.externalBackgroundPath = "stale"
+        service.recentCount = -1
         service.refreshStatus()
         backgroundTimer.start()
       }
@@ -58,18 +60,24 @@ ShellRoot {
     repeat: true
     onTriggered: {
       var service = serviceLoader.item
-      var external = service.externalBackgroundPath
-      if (external === "stale") return
+      if (service.recentCount === -1) return
       stop()
-      if ((root.expectRecovery ? external !== "" : !/\/wallpaper\.jpg$/.test(external))
-          || service.hasExternalBackground === root.expectRecovery) {
+      var external = service.hasExternalBackground
+      if (external !== root.expectExternal) {
         console.error("TEST FAILURE: the panel background state is wrong:", external)
         Qt.quit()
         return
       }
+      if (root.recoveryCase === "companion"
+          && (service.previewWallpaperPath !== "" || !service.hasCurrentWallpaper())) {
+        console.error("TEST FAILURE: a wallpaper with a high-DPI companion was previewed or dropped")
+        Qt.quit()
+        return
+      }
       // Only the status that follows an update may change what the panel previews.
+      var preview = service.previewWallpaperPath
       service.processSucceeded()
-      if (service.externalBackgroundPath !== external) {
+      if (service.hasExternalBackground !== external || service.previewWallpaperPath !== preview) {
         console.error("TEST FAILURE: a finished update changed the preview before its status arrived")
       } else {
         console.log("service recovery test passed")

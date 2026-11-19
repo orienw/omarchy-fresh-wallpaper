@@ -62,7 +62,7 @@ Selecting Manual cancels pending retries from scheduled rotations. First-run and
 
 Press **Change now** in the panel or middle-click the bar icon to apply another wallpaper immediately. The undo button next to it restores the wallpaper shown before, and pressing it again keeps going back through the last few changes.
 
-A theme switch or another tool can replace the background between changes. The panel then shows that background instead of the last Bing image, and the next scheduled change or **Change now** brings Fresh Wallpaper back. With an outside background showing, the undo button brings back the last Fresh Wallpaper image. Videos and images over 50 MiB show a placeholder in place of the preview.
+A theme switch or another tool can replace the background between changes. The panel then shows a placeholder in place of the last Bing image, and the next scheduled change or **Change now** brings Fresh Wallpaper back. With an outside background showing, the undo button brings back the last Fresh Wallpaper image.
 
 The shell commands remain available for shortcuts and automation:
 
@@ -132,7 +132,7 @@ Fresh Wallpaper makes HTTPS requests to `www.bing.com`. Redirects are restricted
 
 The helper fully decodes each JPEG before changing the desktop, rejecting incomplete or corrupt downloads and cache entries. Decoding uses libjpeg's 64 MB memory limit and allows at most 64 scans per image. If no valid image can be obtained, the current Omarchy background stays unchanged. A failure saving metadata after Omarchy applies the image can report an error even though the background has changed.
 
-The Omarchy shell asks the helper for saved metadata and preview paths instead of reading state files itself. The helper rejects symlink and non-regular state paths, ignores state files larger than 256 KiB, and only accepts saved wallpaper paths within its own cache directory. A status only names images checked to be regular files within the 50 MiB download limit, and the helper refuses to run if its cache or state directory is a symlink. Shell-launched helpers use a 25-minute update timeout, with up to 10 more seconds before a forced stop, and a 10-second status timeout. The shell also caps how much of the helper's output it keeps.
+The Omarchy shell asks the helper for saved metadata and preview paths instead of reading state files itself. The helper rejects symlink and non-regular state paths, ignores state files larger than 256 KiB, and only accepts saved wallpaper paths within its own cache directory. A status only names the plugin's own cached wallpaper, checked to be a regular file within the 50 MiB download limit, and never an outside background. The panel also shows a placeholder when that wallpaper has a high-DPI companion such as `name@2x.jpg` beside it, because Qt can load that file in its place on a scaled display. The helper refuses to run if its cache or state directory is a symlink. Shell-launched helpers use a 25-minute update timeout, with up to 10 more seconds before a forced stop, and a 10-second status timeout. The shell also caps how much of the helper's output it keeps.
 
 A failed status read preserves the last known metadata and retries with increasing delays. It does not count as a missing wallpaper or trigger an extra first-run download.
 

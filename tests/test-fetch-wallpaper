@@ -511,7 +511,7 @@ use_case status
 status() {
   fetch --status --background "$TEST_TMP/status/background"
 }
-jq -e '. == {current: null, recentCount: 0, wallpaper: "", external: "", hasBackground: false, hasExternal: false}' \
+jq -e '. == {current: null, recentCount: 0, wallpaper: "", cached: false, hasBackground: false, hasExternal: false}' \
   >/dev/null <<<"$(status)"
 if fetch --status --previous >/dev/null 2>&1 || fetch --status --no-apply >/dev/null 2>&1; then
   printf 'status accepted --previous or --no-apply\n' >&2
@@ -522,45 +522,55 @@ for pick in 1 2; do
   picks+=("$(PATH="$TEST_TMP/full-passes/bin:$PATH" fetch | jq -r '.path')")
 done
 jq -e --arg path "${picks[1]}" \
-  '.current.path == $path and .recentCount == 2 and .wallpaper == $path and .external == "" and .hasBackground == false and .hasExternal == false' \
+  '.current.path == $path and .recentCount == 2 and .wallpaper == $path and .cached and .hasBackground == false and .hasExternal == false' \
   >/dev/null <<<"$(status)"
 
 # The desktop shows this wallpaper, another image, a FIFO, an oversized image, or
-# a video. Only another image gets a preview, but all but the FIFO count as outside
-# backgrounds, so the panel never presents the saved wallpaper in their place.
+# a video. All but the FIFO count as outside backgrounds, and none is ever named
+# for a preview, so the panel never presents the saved wallpaper in their place.
 ln -s -- "${picks[1]}" "$TEST_TMP/status/background"
-jq -e '.external == "" and .hasBackground and (.hasExternal | not)' >/dev/null <<<"$(status)"
+jq -e '.hasBackground and (.hasExternal | not)' >/dev/null <<<"$(status)"
 ln -sfn -- "$TEST_FIXTURE_DIR/wallpaper.jpg" "$TEST_TMP/status/background"
-jq -e --arg path "$TEST_FIXTURE_DIR/wallpaper.jpg" '.external == $path and .hasBackground and .hasExternal' >/dev/null <<<"$(status)"
+jq -e --arg path "$TEST_FIXTURE_DIR/wallpaper.jpg" \
+  '.hasBackground and .hasExternal and (has("external") | not) and ([.. | strings] | index($path) | not)' \
+  >/dev/null <<<"$(status)"
 mkfifo -- "$TEST_TMP/status/fifo"
 ln -sfn -- "$TEST_TMP/status/fifo" "$TEST_TMP/status/background"
-jq -e '.external == "" and (.hasBackground | not) and (.hasExternal | not)' >/dev/null <<<"$(status)"
+jq -e '(.hasBackground | not) and (.hasExternal | not)' >/dev/null <<<"$(status)"
 truncate -s 60M -- "$TEST_TMP/status/large.jpg"
-ln -sfn -- "$TEST_TMP/status/large.jpg" "$TEST_TMP/status/background"
-jq -e '.external == "" and .hasBackground and .hasExternal' >/dev/null <<<"$(status)"
 head -c 16 /dev/zero >"$TEST_TMP/status/small.mp4"
-head -c 16 /dev/zero >"$TEST_TMP/status/CLIP.WEBM"
-truncate -s 60M -- "$TEST_TMP/status/large.mkv"
-for video in small.mp4 CLIP.WEBM large.mkv; do
-  ln -sfn -- "$TEST_TMP/status/$video" "$TEST_TMP/status/background"
-  jq -e '.external == "" and .hasBackground and .hasExternal' >/dev/null <<<"$(status)"
+for outside in large.jpg small.mp4; do
+  ln -sfn -- "$TEST_TMP/status/$outside" "$TEST_TMP/status/background"
+  jq -e '.hasBackground and .hasExternal' >/dev/null <<<"$(status)"
 done
+
+# The saved wallpaper has a high-DPI companion in the cache, which Qt could load
+# in its place. The status reports the wallpaper as cached without naming it.
+ln -sfn -- "${picks[1]}" "$TEST_TMP/status/background"
+for companion in "${picks[1]%.jpg}@2x.jpg" "${picks[1]%.jpg}@9x.jpg"; do
+  : >"$companion"
+  jq -e '.wallpaper == "" and .cached and (.hasExternal | not)' >/dev/null <<<"$(status)"
+  rm -- "$companion"
+done
+: >"${picks[1]%/*}/unrelated@2x.jpg"
+jq -e --arg path "${picks[1]}" '.wallpaper == $path and .cached' >/dev/null <<<"$(status)"
+rm -- "${picks[1]%/*}/unrelated@2x.jpg"
 
 # The wallpaper file is a symlink out of the cache, or oversized. Neither is
 # previewed, not even as the desktop background.
 ln -sfn -- "$TEST_FIXTURE_DIR/wallpaper.jpg" "${picks[1]}"
 ln -sfn -- "${picks[1]}" "$TEST_TMP/status/background"
-jq -e --arg path "${picks[1]}" '.current.path == $path and .wallpaper == "" and .external == "" and (.hasExternal | not)' \
+jq -e --arg path "${picks[1]}" '.current.path == $path and .wallpaper == "" and (.cached | not) and (.hasExternal | not)' \
   >/dev/null <<<"$(status)"
 rm -f -- "${picks[1]}"
 truncate -s 60M -- "${picks[1]}"
-jq -e '.wallpaper == "" and .external == "" and (.hasExternal | not)' >/dev/null <<<"$(status)"
+jq -e '.wallpaper == "" and (.cached | not) and (.hasExternal | not)' >/dev/null <<<"$(status)"
 
 use_case missing-cache-status
 saved=$(fetch)
 rm -r -- "$XDG_CACHE_HOME"
-jq -e --arg path "$(jq -r '.path' <<<"$saved")" --arg external "$TEST_FIXTURE_DIR/wallpaper.jpg" \
-  '.current.path == $path and .recentCount == 1 and .wallpaper == "" and .external == $external and .hasBackground and .hasExternal' \
+jq -e --arg path "$(jq -r '.path' <<<"$saved")" \
+  '.current.path == $path and .recentCount == 1 and .wallpaper == "" and (.cached | not) and .hasBackground and .hasExternal' \
   >/dev/null <<<"$(fetch --status --background "$TEST_FIXTURE_DIR/wallpaper.jpg")"
 [[ ! -e $XDG_CACHE_HOME ]]
 

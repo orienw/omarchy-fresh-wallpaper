@@ -20,14 +20,14 @@ Item {
   property int fetchTimeoutSeconds: 1500
   property int statusTimeoutSeconds: 10
   property int statusRetrySeconds: 30
-  // A status holds current.json, which the helper keeps under 256 KiB, two paths
+  // A status holds current.json, which the helper keeps under 256 KiB, a path
   // that JSON escaping can grow to six times PATH_MAX, and a few short fields.
+  // The rest is room for escaping to grow the saved metadata too.
   readonly property int statusMaxBytes: 262144 + 2 * 6 * 4096 + 4096
   property string currentBackgroundLink: home + "/.local/state/omarchy/current/background"
-  // Both come from the helper's status, which only names files it can preview.
-  property string externalBackgroundPath: ""
+  // Comes from the helper's status, which only names a file it can preview.
   property string previewWallpaperPath: ""
-  // Covers any other background, including a video, which has no preview path.
+  // Covers any other background. The panel never previews one.
   property bool hasExternalBackground: false
 
   property var settings: findSettings()
@@ -174,14 +174,14 @@ Item {
     currentWallpaper = current || ({})
     recentCount = Math.max(0, Math.floor(Number(status.recentCount)) || 0)
     previewWallpaperPath = String(status.wallpaper || "")
-    externalBackgroundPath = String(status.external || "")
     hasExternalBackground = status.hasExternal === true
     fetchSettling = false
 
     // A saved wallpaper whose file is gone still counts while the desktop has a
-    // background, which may have been chosen outside the plugin.
+    // background, which may have been chosen outside the plugin. The file can be
+    // cached without being safe to preview, so the status reports that apart.
     var hasWallpaper = current !== null
-      && (runOnStart || previewWallpaperPath !== "" || status.hasBackground === true)
+      && (runOnStart || status.cached === true || status.hasBackground === true)
     if (awaitingInitialState || !startupResolved) {
       awaitingInitialState = false
       finishInitialization(hasWallpaper)

@@ -238,14 +238,12 @@ ShellRoot {
         current: savedWallpaper,
         recentCount: 2,
         wallpaper: root.existingWallpaperPath,
-        external: root.existingWallpaperPath,
         hasExternal: true
       }))
       var failedReads = ["", "{}", "not json"]
       for (var f = 0; f < failedReads.length; f++) {
         service.statusRead(failedReads[f])
         if (!service.hasExternalBackground
-            || service.externalBackgroundPath !== root.existingWallpaperPath
             || service.previewWallpaperPath !== root.existingWallpaperPath
             || service.recentCount !== 2) {
           root.fail("a failed status changed what the panel shows")
@@ -253,9 +251,15 @@ ShellRoot {
         }
       }
 
-      service.statusRead(JSON.stringify({current: savedWallpaper, external: "", hasExternal: true}))
-      if (!service.hasExternalBackground || service.externalBackgroundPath !== "") {
-        root.fail("an outside background with no preview was not reported")
+      service.statusRead(JSON.stringify({current: savedWallpaper, hasExternal: true}))
+      if (!service.hasExternalBackground) {
+        root.fail("an outside background was not reported")
+        return
+      }
+      // A high-DPI companion hides the preview without making the wallpaper look missing.
+      service.statusRead(JSON.stringify({current: savedWallpaper, wallpaper: "", cached: true}))
+      if (service.previewWallpaperPath !== "" || !service.hasCurrentWallpaper()) {
+        root.fail("a wallpaper with a high-DPI companion was previewed or dropped")
         return
       }
       service.statusRead(JSON.stringify({current: savedWallpaper}))

@@ -93,8 +93,8 @@ ShellRoot {
         // A rejected status keeps retrying, which ends in the timeout below.
         if (service.statusError !== "" || !service.hasExternalBackground) return
         stop()
-        root.finish(service.previewWallpaperPath !== "" && service.externalBackgroundPath !== ""
-          && service.lastTrigger === "" ? "" : "the longest valid status lost its paths")
+        root.finish(service.previewWallpaperPath !== "" && service.lastTrigger === ""
+          ? "" : "the longest valid status lost its path")
         return
       }
       stop()

@@ -25,8 +25,9 @@ ShellRoot {
     property int intervalMinutes: 1440
     property bool runOnStart: false
     property var settings: ({})
-    property string externalBackgroundPath: ""
     property bool hasExternalBackground: false
+    // A service could still name an outside background. The panel must not load it.
+    property string externalBackgroundPath: Quickshell.env("FRESH_WALLPAPER_TEST_IMAGE")
     property string previewWallpaperPath: currentWallpaper.path || ""
     property double nextChangeAtMs: 0
     property double retryAfterMs: 0
@@ -234,7 +235,7 @@ ShellRoot {
         return
       }
 
-      // A video has no preview, but the saved wallpaper must not stand in for it.
+      // An outside background has no preview, but the saved wallpaper must not stand in for it.
       fakeService.currentWallpaper = ({
         path: Quickshell.env("FRESH_WALLPAPER_TEST_IMAGE"),
         copyrightLink: "https://www.bing.com/search?q=aspens"
@@ -254,12 +255,7 @@ ShellRoot {
           || panel.previewPath !== ""
           || !panel.previewPlaceholderVisible
           || panel.learnMoreUrl !== "") {
-        root.fail("an outside background with no preview showed the saved wallpaper")
-        return
-      }
-      fakeService.externalBackgroundPath = Quickshell.env("FRESH_WALLPAPER_TEST_IMAGE")
-      if (panel.previewPath !== fakeService.externalBackgroundPath) {
-        root.fail("an outside background with a preview was not shown")
+        root.fail("an outside background got a preview")
         return
       }
 

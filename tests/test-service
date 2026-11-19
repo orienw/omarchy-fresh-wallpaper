@@ -138,16 +138,22 @@ if ! grep -q "service offline deferral test passed" <<<"$offline_output"; then
   exit 1
 fi
 
-for recovery_case in missing replaced missing-cache; do
+for recovery_case in missing replaced missing-cache companion; do
   recovery_dir="$RECOVERY_STATE/$recovery_case"
   recovery_cache="$TEST_CACHE"
-  [[ $recovery_case != missing-cache ]] || recovery_cache="$recovery_dir/cache"
+  [[ $recovery_case != missing-cache && $recovery_case != companion ]] || recovery_cache="$recovery_dir/cache"
   mkdir -p "$recovery_dir/omarchy/fresh-wallpaper"
-  deleted_path="$recovery_cache/omarchy/fresh-wallpaper/bing-20200101-Deleted_EN-US0000000000-UHD.jpg"
-  jq -cn --arg path "$deleted_path" --arg changedAt "$STATE_TIMESTAMP" \
+  saved_path="$recovery_cache/omarchy/fresh-wallpaper/bing-20200101-Deleted_EN-US0000000000-UHD.jpg"
+  jq -cn --arg path "$saved_path" --arg changedAt "$STATE_TIMESTAMP" \
     '{path: $path, changedAt: $changedAt}' >"$recovery_dir/omarchy/fresh-wallpaper/current.json"
   if [[ $recovery_case == missing ]]; then
-    ln -s "$deleted_path" "$recovery_dir/background"
+    ln -s "$saved_path" "$recovery_dir/background"
+  elif [[ $recovery_case == companion ]]; then
+    # The saved wallpaper is still cached, with a high-DPI companion beside it,
+    # and the desktop has no background. Nothing is missing, so nothing is fetched.
+    mkdir -p "${saved_path%/*}"
+    cp -- "$TEST_DIR/fixtures/wallpaper.jpg" "$saved_path"
+    cp -- "$TEST_DIR/fixtures/wallpaper.jpg" "${saved_path%.jpg}@2x.jpg"
   else
     ln -s "$TEST_DIR/fixtures/wallpaper.jpg" "$recovery_dir/background"
   fi
@@ -217,19 +223,16 @@ for bounds_case in symlink oversized fifo linked-dir foreign long-name longest-s
         '{path: $path, changedAt: $changedAt}' >"$bounds_state_dir/current.json"
       ;;
     longest-status)
-      # State at its limit, and both paths the status adds to it as long as they
-      # can be, in control characters that JSON escapes to six bytes each.
+      # State at its limit, and the path the status adds to it as long as it can
+      # be, in control characters that JSON escapes to six bytes each.
       segment=$(printf '\001%.0s' {1..200})
       bounds_cache=$bounds_dir
       while (( ${#bounds_cache} + 280 < 4095 )); do bounds_cache+="/$segment"; done
-      longest_background=$bounds_dir
-      while (( ${#longest_background} + 215 < 4095 )); do longest_background+="/$segment"; done
       longest_wallpaper="$bounds_cache/omarchy/fresh-wallpaper/bing-20260801-Test_EN-US0000000000-UHD.jpg"
-      mkdir -p -- "${longest_wallpaper%/*}" "$longest_background"
+      mkdir -p -- "${longest_wallpaper%/*}"
       cp -- "$TEST_DIR/fixtures/wallpaper.jpg" "$longest_wallpaper"
-      cp -- "$TEST_DIR/fixtures/wallpaper.jpg" "$longest_background/background.jpg"
       bounds_background="$bounds_dir/background"
-      ln -s -- "$longest_background/background.jpg" "$bounds_background"
+      ln -s -- "$TEST_DIR/fixtures/wallpaper.jpg" "$bounds_background"
       longest_state=$(jq -cn --arg path "$longest_wallpaper" --arg changedAt "$STATE_TIMESTAMP" \
         '{path: $path, changedAt: $changedAt, title: ""}')
       {
@@ -237,10 +240,10 @@ for bounds_case in symlink oversized fifo linked-dir foreign long-name longest-s
         head -c "$((262144 - ${#longest_state} - 1))" /dev/zero | tr '\0' x
         printf '"}\n'
       } >"$bounds_state_dir/current.json"
-      # Reaches past what the state alone needs, so the test covers the paths.
+      # Reaches past what the state alone needs, so the test covers the path.
       longest_size=$(XDG_STATE_HOME="$bounds_dir" XDG_CACHE_HOME="$bounds_cache" \
         bash "$PROJECT_DIR/scripts/fetch-wallpaper" --status --background "$bounds_background" | wc -c)
-      if (( longest_size < 300000 )); then
+      if (( longest_size < 280000 )); then
         printf 'the longest status only reached %s bytes\n' "$longest_size" >&2
         exit 1
       fi
