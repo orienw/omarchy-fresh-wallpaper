@@ -107,14 +107,12 @@ ShellRoot {
     interval: 100
     onTriggered: {
       try {
+        input.testNoTextEntry()
         input.testPointerThenKeyboard()
         input.testDropdownFocus()
         input.testDropdownValues()
         input.testRejectedDropdownValues()
-        input.testHiddenIntervalFocus()
-        input.testEditorPointerActions()
-        input.testEditorNavigationKeys()
-        input.testIntervalEditorKeys()
+        input.testEscape()
         input.testShortPanel()
         console.log("UI input tests passed")
       } catch (error) {
@@ -128,6 +126,10 @@ ShellRoot {
     id: input
     name: "PanelInput"
     when: false
+
+    function testNoTextEntry() {
+      root.check(root.find(loader.item, "readOnly", false) === null, "the panel contains an editable text field")
+    }
 
     function testPointerThenKeyboard() {
       var panel = loader.item
@@ -158,6 +160,8 @@ ShellRoot {
         mouseClick(dropdown, dropdown.width / 2, dropdown.height - Style.spacing.controlHeight / 2)
         wait(30)
         root.check(dropdown.popupOpen, labels[i] + " did not open on click")
+        root.check(root.find(window.contentItem, "readOnly", false) === null,
+          labels[i] + " opened an editable text field")
         keyClick(Qt.Key_Return)
         wait(30)
         root.check(!dropdown.popupOpen, labels[i] + " did not close after selection")
@@ -172,20 +176,38 @@ ShellRoot {
       var frequency = root.find(panel, "label", "Frequency")
       mouseClick(frequency, frequency.width / 2, frequency.height - Style.spacing.controlHeight / 2)
       wait(30)
-      for (var i = 0; i < 3; i++) keyClick(Qt.Key_Down)
+      for (var i = 0; i < 3; i++) keyClick(Qt.Key_Up)
       keyClick(Qt.Key_Return)
       wait(30)
-      var custom = root.find(panel, "label", "Custom interval (minutes)")
-      root.check(custom.visible && custom.field.activeFocus, "Custom selection did not focus the interval")
-      keyClick(Qt.Key_A, Qt.ControlModifier)
-      keyClick(Qt.Key_1)
-      keyClick(Qt.Key_4)
-      keyClick(Qt.Key_4)
-      keyClick(Qt.Key_0)
+      root.check(service.intervalMinutes === 60 && frequency.currentLabel() === "Hourly",
+        "Frequency selection was not applied")
+      service.intervalMinutes = 75
+      root.check(frequency.value === "75" && frequency.currentLabel() === "Custom (75 min)",
+        "Frequency did not list an interval set outside the panel")
+      mouseClick(frequency, frequency.width / 2, frequency.height - Style.spacing.controlHeight / 2)
+      wait(30)
+      keyClick(Qt.Key_Up)
       keyClick(Qt.Key_Return)
       wait(30)
-      root.check(service.intervalMinutes === 1440 && !custom.visible, "typed preset interval was not applied")
-      root.check(frequency.value === "1440" && frequency.currentLabel() === "Daily", "Frequency retained Custom after entering a preset")
+      root.check(service.intervalMinutes === 43200 && frequency.currentLabel() === "Monthly (30 days)",
+        "a preset did not replace the Custom interval")
+      root.check(frequency.options.length === panel.frequencyPresets.length,
+        "Custom stayed listed after a preset replaced it")
+
+      service.intervalMinutes = 75
+      mouseClick(frequency, frequency.width / 2, frequency.height - Style.spacing.controlHeight / 2)
+      wait(30)
+      keyClick(Qt.Key_Up)
+      keyClick(Qt.Key_Up)
+      service.intervalMinutes = 90
+      wait(30)
+      root.check(!frequency.popupOpen, "Frequency stayed open after the interval changed underneath it")
+      panel.cursorIndex = panel.frequencyCursorIndex
+      keyClick(Qt.Key_Return)
+      wait(30)
+      root.check(service.intervalMinutes === 90 && frequency.popupOpen, "Enter saved a stale Frequency highlight")
+      frequency.close()
+      wait(30)
       service.intervalMinutes = 0
       root.check(frequency.currentLabel() === "Manual only", "Frequency ignored a service interval change")
       service.intervalMinutes = 1440
@@ -204,7 +226,6 @@ ShellRoot {
     function testRejectedDropdownValues() {
       var panel = loader.item
       var frequency = root.find(panel, "label", "Frequency")
-      var custom = root.find(panel, "label", "Custom interval (minutes)")
       var region = root.find(panel, "label", "Region")
       service.intervalMinutes = 1440
       service.market = "en-US"
@@ -218,13 +239,14 @@ ShellRoot {
       root.check(service.intervalMinutes === 1440 && frequency.currentLabel() === "Daily",
         "a rejected preset remained selected")
 
+      service.intervalMinutes = 75
       mouseClick(frequency, frequency.width / 2, frequency.height - Style.spacing.controlHeight / 2)
       wait(30)
-      for (var i = 0; i < 3; i++) keyClick(Qt.Key_Down)
+      keyClick(Qt.Key_Up)
       keyClick(Qt.Key_Return)
       wait(30)
-      root.check(service.intervalMinutes === 1440 && frequency.currentLabel() === "Daily" && !custom.visible,
-        "a rejected Custom selection left the frequency and editor inconsistent")
+      root.check(service.intervalMinutes === 75 && frequency.currentLabel() === "Custom (75 min)",
+        "a rejected preset replaced the Custom interval")
 
       mouseClick(region, region.width / 2, region.height - Style.spacing.controlHeight / 2)
       wait(30)
@@ -240,120 +262,10 @@ ShellRoot {
         "dropdown bindings stopped following service changes after a rejected save")
     }
 
-    function testHiddenIntervalFocus() {
+    function testEscape() {
       parkPointer()
-      var panel = loader.item
-      var custom = root.find(panel, "label", "Custom interval (minutes)")
-      service.intervalMinutes = 1425
-      panel.cursorIndex = panel.customCursorIndex
-      keyClick(Qt.Key_Return)
-      root.check(custom.field.activeFocus, "the interval field did not receive focus")
-      keyClick(Qt.Key_Up)
-      wait(0)
-      root.check(service.intervalMinutes === 1440 && !custom.visible && !custom.field.activeFocus,
-        "stepping onto a preset retained focus in the hidden interval field")
-      keyClick(Qt.Key_Down)
-      root.check(service.intervalMinutes === 1440 && panel.cursorIndex === panel.startupCursorIndex,
-        "Down edited the hidden interval instead of navigating")
-
-      service.intervalMinutes = 60
-      panel.cursorIndex = panel.customCursorIndex
-      keyClick(Qt.Key_Return)
-      root.check(custom.field.activeFocus, "the interval field did not regain focus")
-      keyClick(Qt.Key_Up)
-      root.check(service.intervalMinutes === 75, "the interval edit was not applied before a service change")
-      service.intervalMinutes = 1440
-      wait(0)
-      root.check(!custom.visible && !custom.field.activeFocus,
-        "a service interval change retained focus in the hidden field")
-    }
-
-    function testEditorPointerActions() {
-      var panel = loader.item
-      var custom = root.find(panel, "label", "Custom interval (minutes)")
-      service.previousAvailable = true
-      service.intervalMinutes = 60
-      var cases = [
-        {property: "text", label: "Change now", count: "refreshCalls", next: panel.previousCursorIndex},
-        {property: "tooltipText", label: "Previous wallpaper", count: "previousCalls", next: panel.sourceCursorIndex},
-        {property: "label", label: "Change on start", count: "runOnStart", next: panel.startupCursorIndex}
-      ]
-      for (var i = 0; i < cases.length; i++) {
-        var entry = cases[i]
-        panel.cursorIndex = panel.customCursorIndex
-        keyClick(Qt.Key_Return)
-        root.check(custom.field.activeFocus, "the interval field did not receive focus before " + entry.label)
-        var control = root.find(panel, entry.property, entry.label)
-        var before = service[entry.count]
-        mouseMove(control, control.width / 2, control.height / 2)
-        mouseClick(control, control.width / 2, control.height / 2)
-        wait(0)
-        root.check(service[entry.count] === (entry.count === "runOnStart" ? !before : before + 1),
-          entry.label + " did not execute while editing")
-        root.check(!custom.field.activeFocus, entry.label + " retained interval editor focus")
-        service.running = false
-        keyClick(Qt.Key_Down)
-        root.check(service.intervalMinutes === 60 && panel.cursorIndex === entry.next,
-          "Down edited the interval after clicking " + entry.label)
-      }
-      service.previousAvailable = false
-      service.runOnStart = false
-    }
-
-    function testEditorNavigationKeys() {
-      parkPointer()
-      var panel = loader.item
-      var custom = root.find(panel, "label", "Custom interval (minutes)")
-      var cases = [
-        {key: Qt.Key_Tab, name: "Tab", draft: "75"},
-        {key: Qt.Key_Backtab, modifiers: Qt.ShiftModifier, name: "Backtab", draft: "90"},
-        {key: Qt.Key_Escape, name: "Escape", draft: "999"}
-      ]
-      for (var i = 0; i < cases.length; i++) {
-        var entry = cases[i]
-        service.intervalMinutes = 60
-        panel.cursorIndex = panel.customCursorIndex
-        keyClick(Qt.Key_Return)
-        root.check(custom.field.activeFocus, "the interval field did not receive focus before " + entry.name)
-        keyClick(Qt.Key_A, Qt.ControlModifier)
-        for (var j = 0; j < entry.draft.length; j++) keyClick(entry.draft[j])
-        keyClick(entry.key, entry.modifiers)
-        wait(0)
-        root.check(panel.opened && !custom.field.activeFocus && service.intervalMinutes === Number(entry.draft),
-          entry.name + " did not commit the interval and leave editing")
-        keyClick(Qt.Key_Down)
-        root.check(panel.cursorIndex === panel.marketCursorIndex && service.intervalMinutes === Number(entry.draft),
-          entry.name + " did not return focus to panel navigation")
-      }
-    }
-
-    function testIntervalEditorKeys() {
-      parkPointer()
-      var panel = loader.item
-      service.intervalMinutes = 60
-      panel.cursorIndex = panel.customCursorIndex
-      keyClick(Qt.Key_Return)
-      var custom = root.find(panel, "label", "Custom interval (minutes)")
-      root.check(custom.field.activeFocus, "Enter did not begin interval editing")
       keyClick(Qt.Key_Escape)
-      wait(30)
-      root.check(panel.opened && !custom.field.activeFocus, "Escape did not return to panel navigation")
-      keyClick(Qt.Key_Down)
-      root.check(service.intervalMinutes === 60,
-        "Down changed the interval after Escape to " + service.intervalMinutes)
-      root.check(panel.cursorIndex === panel.marketCursorIndex,
-        "Down selected cursor " + panel.cursorIndex + " after Escape; expected Region " + panel.marketCursorIndex)
-      keyClick(Qt.Key_Up)
-      keyClick(Qt.Key_Return)
-      keyClick(Qt.Key_A, Qt.ControlModifier)
-      keyClick(Qt.Key_7)
-      keyClick(Qt.Key_5)
-      keyClick(Qt.Key_Return)
-      wait(30)
-      root.check(service.intervalMinutes === 75 && !custom.field.activeFocus,
-        "Return did not commit the interval and leave editing")
-      keyClick(Qt.Key_Escape)
-      root.check(!panel.opened, "Escape did not close the panel after editing")
+      root.check(!loader.item.opened, "Escape did not close the panel")
     }
 
     function testShortPanel() {

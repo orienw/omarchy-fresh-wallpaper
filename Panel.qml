@@ -14,8 +14,6 @@ Panel {
   property var anchorItem: null
   property var hostWidget: null
   property int cursorIndex: 0
-  property bool customIntervalRequested: false
-  property int customIntervalDraft: 60
   property double nowMs: Date.now()
 
   readonly property var barIdentity: hostWidget || root
@@ -51,23 +49,27 @@ Panel {
   readonly property int configuredInterval: wallpaperService
     ? wallpaperService.intervalMinutes
     : 1440
-  readonly property bool intervalIsPreset: [0, 1440, 10080, 43200]
-    .indexOf(configuredInterval) !== -1
-  readonly property bool customIntervalVisible: customIntervalRequested || !intervalIsPreset
   readonly property int previousCursorIndex: 1
   readonly property int learnMoreCursorIndex: 2
   readonly property int sourceCursorIndex: 3
   readonly property int frequencyCursorIndex: sourceCursorIndex + 1
-  readonly property int customCursorIndex: frequencyCursorIndex + 1
-  readonly property int marketCursorIndex: customIntervalVisible ? customCursorIndex + 1 : customCursorIndex
+  readonly property int marketCursorIndex: frequencyCursorIndex + 1
   readonly property int startupCursorIndex: marketCursorIndex + 1
-  readonly property var frequencyOptions: [
+  readonly property var frequencyPresets: [
     { value: "0", label: "Manual only" },
+    { value: "60", label: "Hourly" },
+    { value: "360", label: "Every 6 hours" },
+    { value: "720", label: "Every 12 hours" },
     { value: "1440", label: "Daily" },
     { value: "10080", label: "Weekly" },
-    { value: "43200", label: "Monthly (30 days)" },
-    { value: "custom", label: "Custom minutes..." }
+    { value: "43200", label: "Monthly (30 days)" }
   ]
+  // An interval set outside the panel stays listed until a preset replaces it.
+  readonly property var frequencyOptions: frequencyPresets.some(function(option) {
+    return option.value === String(configuredInterval)
+  }) ? frequencyPresets : frequencyPresets.concat([
+    { value: String(configuredInterval), label: "Custom (" + configuredInterval + " min)" }
+  ])
   readonly property var marketOptions: [
     { value: "en-US", label: "United States" },
     { value: "en-GB", label: "United Kingdom" },
@@ -103,9 +105,8 @@ Panel {
   }
 
   function ensureCursorVisible() {
-    var targets = [changeButton, previousButton, learnMoreButton, providerDropdown, frequencyDropdown]
-    if (customIntervalVisible) targets.push(customIntervalField)
-    targets.push(marketDropdown, startupToggle)
+    var targets = [changeButton, previousButton, learnMoreButton, providerDropdown, frequencyDropdown,
+      marketDropdown, startupToggle]
     var target = targets[cursorIndex]
     if (!target) return
     var top = target.mapToItem(panelFlick.contentItem, 0, 0).y
@@ -134,41 +135,12 @@ Panel {
     if (wallpaperService && previousAvailable && !busy) wallpaperService.startPrevious()
   }
 
-  function selectFrequency(value) {
-    if (!wallpaperService) return "error: plugin is not ready"
-
-    if (value === "custom") {
-      customIntervalDraft = intervalIsPreset ? 60 : configuredInterval
-      var customResult = wallpaperService.setIntervalMinutes(customIntervalDraft)
-      if (String(customResult).indexOf("error:") === 0) return customResult
-      customIntervalRequested = true
-      Qt.callLater(function() { customIntervalField.field.forceActiveFocus() })
-      return customResult
-    }
-
-    var result = wallpaperService.setIntervalMinutes(value)
-    if (String(result).indexOf("error:") !== 0) customIntervalRequested = false
-    return result
-  }
-
-  function setCustomInterval(value) {
-    if (!wallpaperService) return "error: plugin is not ready"
-    var minutes = Math.floor(Number(value))
-    customIntervalDraft = minutes
-    var result = wallpaperService.setIntervalMinutes(value)
-    if (String(result).indexOf("error:") !== 0)
-      customIntervalRequested = [0, 1440, 10080, 43200].indexOf(minutes) === -1
-    return result
-  }
-
   function activateCursor() {
     if (cursorIndex === 0 && wallpaperService && !busy) wallpaperService.startRefresh("panel")
     else if (cursorIndex === previousCursorIndex) restorePrevious()
     else if (cursorIndex === learnMoreCursorIndex) openLearnMore()
     else if (cursorIndex === sourceCursorIndex) providerDropdown.toggle()
     else if (cursorIndex === frequencyCursorIndex) frequencyDropdown.toggle()
-    else if (customIntervalVisible && cursorIndex === customCursorIndex)
-      customIntervalField.field.forceActiveFocus()
     else if (cursorIndex === marketCursorIndex) marketDropdown.toggle()
     else if (cursorIndex === startupCursorIndex && wallpaperService)
       wallpaperService.setRunOnStart(wallpaperService.runOnStart ? "false" : "true")
@@ -195,15 +167,9 @@ Panel {
     Qt.callLater(ensureCursorVisible)
   }
   onCursorIndexChanged: Qt.callLater(ensureCursorVisible)
-  onCustomIntervalVisibleChanged: {
-    if (!customIntervalVisible && customIntervalField.field.activeFocus) restorePanelFocus()
-    Qt.callLater(ensureCursorVisible)
-  }
-  onConfiguredIntervalChanged: {
-    if (configuredInterval > 0) customIntervalDraft = configuredInterval
-    if ([0, 1440, 10080, 43200].indexOf(configuredInterval) !== -1) customIntervalRequested = false
-  }
-  onStartupCursorIndexChanged: cursorIndex = Math.min(cursorIndex, startupCursorIndex)
+  // The Frequency list is rebuilt around a Custom interval, which would move
+  // the highlight under an open menu.
+  onConfiguredIntervalChanged: frequencyDropdown.close()
 
   Timer {
     interval: 30000
@@ -229,7 +195,6 @@ Panel {
       blocked: providerDropdown.popupOpen
         || frequencyDropdown.popupOpen
         || marketDropdown.popupOpen
-        || (root.customIntervalVisible && customIntervalField.field.activeFocus)
       onMoveRequested: function(dx, dy) {
         var delta = dy !== 0 ? dy : dx
         if (delta !== 0) root.moveCursor(delta)
@@ -467,7 +432,7 @@ Panel {
           width: parent.width
           label: "Frequency"
           Binding on value {
-            value: root.customIntervalVisible ? "custom" : String(root.configuredInterval)
+            value: String(root.configuredInterval)
           }
           options: root.frequencyOptions
           foreground: root.foreground
@@ -476,41 +441,10 @@ Panel {
           onPopupOpenChanged: if (!popupOpen) root.restorePanelFocus()
           onHovered: function(hovered) { if (hovered) root.cursorIndex = root.frequencyCursorIndex }
           onChanged: function(value) {
-            var result = root.selectFrequency(value)
-            if (String(result).indexOf("error:") === 0)
-              frequencyDropdown.value = root.customIntervalVisible ? "custom" : String(root.configuredInterval)
-          }
-        }
-
-        NumberField {
-          id: customIntervalField
-          visible: root.customIntervalVisible
-          width: parent.width
-          label: "Custom interval (minutes)"
-          from: 15
-          to: 525600
-          stepSize: 15
-          value: root.customIntervalRequested && root.intervalIsPreset
-            ? root.customIntervalDraft
-            : root.configuredInterval
-          foreground: root.foreground
-          fontFamily: root.fontFamily
-          hasCursor: root.customIntervalVisible && root.cursorIndex === root.customCursorIndex
-          onHovered: function(hovered) { if (hovered) root.cursorIndex = root.customCursorIndex }
-          onModified: function(value) {
-            root.setCustomInterval(value)
-          }
-        }
-
-        Connections {
-          target: customIntervalField.field.contentItem.Keys
-          function onPressed(event) {
-            var tab = event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab
-            if (!tab && event.key !== Qt.Key_Escape && event.key !== Qt.Key_Return && event.key !== Qt.Key_Enter) return
-            if (tab || event.key === Qt.Key_Escape) event.accepted = true
-            Qt.callLater(function() {
-              if (root.opened) keyCatcher.forceActiveFocus()
-            })
+            if (root.wallpaperService) {
+              var result = root.wallpaperService.setIntervalMinutes(value)
+              if (String(result).indexOf("error:") === 0) frequencyDropdown.value = String(root.configuredInterval)
+            }
           }
         }
 

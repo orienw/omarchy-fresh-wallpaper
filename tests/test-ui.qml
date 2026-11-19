@@ -151,11 +151,7 @@ ShellRoot {
       if (panel.previewPlaceholderVisible) return
       stop()
 
-      fakeService.intervalMinutes = 0
-      if (panel.selectFrequency("custom") !== "60") {
-        root.fail("selecting Custom did not persist a real interval")
-        return
-      }
+      fakeService.intervalMinutes = 75
       settingsTimer.start()
     }
   }
@@ -166,11 +162,11 @@ ShellRoot {
     repeat: false
     onTriggered: {
       var panel = panelLoader.item
-      if (fakeService.intervalMinutes !== 60
-          || !panel.customIntervalVisible
-          || panel.customIntervalDraft !== 60
-          || panel.startupCursorIndex !== 7) {
-        root.fail("Custom frequency state was not applied")
+      var custom = panel.frequencyOptions[panel.frequencyOptions.length - 1]
+      if (panel.frequencyOptions.length !== panel.frequencyPresets.length + 1
+          || custom.value !== "75"
+          || custom.label !== "Custom (75 min)") {
+        root.fail("an interval set outside the panel was not listed")
         return
       }
 
@@ -221,11 +217,7 @@ ShellRoot {
         return
       }
 
-      panel.cursorIndex = panel.startupCursorIndex
-      if (panel.setCustomInterval("1440") !== "1440") {
-        root.fail("panel settings did not reach the service")
-        return
-      }
+      fakeService.intervalMinutes = 1440
       finishTimer.start()
     }
   }
@@ -236,10 +228,8 @@ ShellRoot {
     repeat: false
     onTriggered: {
       var panel = panelLoader.item
-      if (panel.customIntervalVisible
-          || panel.startupCursorIndex !== 6
-          || panel.cursorIndex !== 6) {
-        root.fail("cursor was not clamped when the Custom row closed")
+      if (panel.frequencyOptions.length !== panel.frequencyPresets.length) {
+        root.fail("Custom stayed listed after a preset replaced it")
         return
       }
 
