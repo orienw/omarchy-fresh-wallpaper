@@ -195,6 +195,8 @@ Probe the live Bing source without changing the wallpaper:
 scripts/fetch-wallpaper --provider bing --market en-US --no-apply | jq
 ```
 
+The probe keeps the image it downloads in the cache. The next new wallpaper prunes the cache back to its limit.
+
 ## License
 
 Fresh Wallpaper is released under the MIT License. See [LICENSE](LICENSE).
